@@ -41,13 +41,31 @@ pip install -U searXNG
 
 ### Configure as an MCP Service
 
-Add the following to your MCP configuration:
+To set up SearXNG as an MCP server, add one of the following to your MCP configuration file:
 
+**UVX setup:**
 ```json
 "mcpServers": {
   "searxng": {
     "command": "uvx",
     "args": ["searxng", "--instance-url=https://searx.party"]
+  }
+}
+```
+
+**Docker setup:**
+```json
+"mcpServers": {
+  "searxng": {
+    "command": "docker",
+    "args": [
+      "run",
+      "-i",
+      "--rm",
+      "supercorp/supergateway:uvx",
+      "--stdio",
+      "uvx searxng --instance-url=https://searx.party"
+    ]
   }
 }
 ```
