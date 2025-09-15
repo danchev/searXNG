@@ -1,0 +1,52 @@
+[project]
+name = "searXNG"
+version = "0.0.0.dev0"
+description = "MCP server providing SearXNG-based web search functionality"
+authors = [
+    { name = "D. Danchev", email = "12420863+danchev@users.noreply.github.com" },
+]
+classifiers = [
+    "License :: OSI Approved :: GNU Affero General Public License v3 or later (AGPLv3+)",
+    "Development Status :: 2 - Pre-Alpha",
+    "Operating System :: OS Independent",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Information Technology",
+    "Topic :: Scientific/Engineering",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Scientific/Engineering :: Interface Engine/Protocol Translator",
+    "Topic :: Software Development :: Libraries",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Programming Language :: Python",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Programming Language :: Python :: 3 :: Only",
+]
+readme = "README.md"
+license = { text = "AGPL-3.0-or-later" }
+dependencies = ["mcp[cli]>=1.14.0", "requests>=2.32.5"]
+requires-python = ">=3.11"
+
+[project.urls]
+Source = "https://github.com/danchev/searXNG"
+Documentation = "https://danchev.github.io/searXNG/"
+Issues = "https://github.com/danchev/searXNG/issues"
+
+[project.scripts]
+searxng = "searXNG.__init__:main"
+
+[build-system]
+requires = ["uv_build>=0.8.17,<0.9.0"]
+build-backend = "uv_build"
+
+[tool.uv.build-backend]
+module-name = "searXNG"
+module-root = "."
+
+[[tool.uv.index]]
+name = "testpypi"
+url = "https://test.pypi.org/simple/"
+publish-url = "https://test.pypi.org/legacy/"
+explicit = true

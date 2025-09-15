@@ -1,0 +1,13 @@
+{
+  "servers": {
+    "searXNG": {
+      "command": "uv",
+      "args": [
+        "--directory",
+        ".",
+        "run",
+        "searxng",
+      ]
+    }
+  }
+}

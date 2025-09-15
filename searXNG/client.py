@@ -4,15 +4,15 @@ import logging
 
 class SearXNGClient:
     """
-    SearXNG 搜索客户端
-    用于执行搜索并将结果格式化为指定的JSON格式
+    SearXNG Search client
+    Used to perform searches and format the results into the specified JSON format
     """
-    def __init__(self, instance_url: str = "https://your-searxng-instance.com"):
+    def __init__(self, instance_url: str = "https://searx.party"):
         """
-        初始化SearXNG客户端
+        Initialize SearXNG client
 
         参数:
-        - instance_url: SearXNG实例URL
+        - instance_url: SearXNG instance URL
         """
         self.instance_url = instance_url
         self.logger = logging.getLogger(__name__)
@@ -20,7 +20,7 @@ class SearXNGClient:
     def search(self, query: str,
                categories: Optional[List[str]] = None,
                engines: Optional[List[str]] = None,
-               language: str = "zh",
+               language: str = "en",
                max_results: int = 20,
                timeout: int = 30,
                pageno: int = 1,
@@ -36,35 +36,34 @@ class SearXNGClient:
                enabled_engines: Optional[List[str]] = None,
                disabled_engines: Optional[List[str]] = None) -> Dict[str, Any]:
         """
-        执行搜索并返回格式化的结果
+        Performs a search and returns formatted results
 
-        参数:
-        - query: 搜索查询
-        - categories: 搜索类别列表 (例如 ['general', 'images', 'news'])
-        - engines: 搜索引擎列表 (例如 ['google', 'bing', 'duckduckgo'])
-        - language: 搜索语言代码
-        - include_images: 是否包含图像结果
-        - max_results: 最大结果数量
-        - timeout: API请求超时时间(秒)
-        - pageno: 搜索结果页码
-        - time_range: 时间范围过滤 ('day', 'week', 'month', 'year')
-        - safesearch: 安全搜索级别 (0=关闭, 1=中等, 2=严格)
-        - format: 返回格式 ('json', 'csv', 'rss')
-        - results_on_new_tab: 在新标签页打开结果 (0=否, 1=是)
-        - image_proxy: 是否通过SearXNG代理图像
-        - autocomplete: 自动完成服务
-        - theme: 界面主题
-        - enabled_plugins: 要启用的插件列表
-        - disabled_plugins: 要禁用的插件列表
-        - enabled_engines: 要启用的引擎列表
-        - disabled_engines: 要禁用的引擎列表
-
-        返回:
-        - 结构化的搜索结果JSON
+        Parameters:
+        - query: search query
+        - categories: search category list (e.g. ['general', 'images', 'news'])
+        - engines: search engine list (e.g. ['google', 'bing', 'duckduckgo'])
+        - language: search language code
+        - include_images: whether to include image results
+        - max_results: maximum number of results to return
+        - timeout: API request timeout (seconds)
+        - pageno: search result page number
+        - time_range: time range filter ('day', 'week', 'month', 'year')
+        - safesearch: safe search level (0=off, 1=medium, 2=strict)
+        - format: response format ('json', 'csv', 'rss')
+        - results_on_new_tab: open results in new tab (0=no, 1=yes)
+        - image_proxy: whether to use SearXNG to proxy images
+        - autocomplete: autocomplete service
+        - theme: interface theme
+        - enabled_plugins: list of plugins to enable
+        - disabled_plugins: list of plugins to disable
+        - enabled_engines: list of engines to enable
+        - disabled_engines: list of engines to disable
+        Returns:
+        - Structured search result JSON
         """
-        self.logger.info(f"开始搜索: {query}")
+        self.logger.info(f"Start search: {query}")
 
-        # 构建查询参数
+        # Build query parameters
         params = {
             'q': query,
             'format': format,
@@ -73,7 +72,7 @@ class SearXNGClient:
             'pageno': pageno
         }
 
-        # 添加可选参数
+        # Add optional parameters
         if categories:
             params['categories'] = ','.join(categories)
         if engines:
@@ -97,51 +96,51 @@ class SearXNGClient:
         if disabled_engines:
             params['disabled_engines'] = ','.join(disabled_engines)
 
-        # 请求URL
+        # Build request URL
         url = f"{self.instance_url}/search"
 
         try:
-            # 发送搜索请求
-            self.logger.info(f"请求URL: {url} 参数: {params}")
+            # Send search request
+            self.logger.info(f"Request URL: {url} Parameters: {params}")
             response = requests.get(url, params=params, timeout=timeout)
-            response.raise_for_status()  # 检查HTTP错误
+            response.raise_for_status()  # Check for HTTP errors
 
-            # 解析响应
+            # Parse response
             search_results = response.json()
-            self.logger.info(f"获取到 {len(search_results.get('results', []))} 个结果")
+            self.logger.info(f"Got {len(search_results.get('results', []))} results")
 
-            # 格式化结果
+            # Format results
             return self._format_results(query, search_results, max_results)
 
         except requests.RequestException as e:
-            self.logger.error(f"请求错误: {e}")
-            # 返回空结果
-            return self._format_results(query, {"results": []}, [], 0)
+            self.logger.error(f"Request error: {e}")
+            # Return empty results on error
+            return self._format_results(query, {"results": []}, 0)
 
     def _format_results(self, query: str, search_data: Dict[str, Any],
                         max_results: int) -> Dict[str, Any]:
         """
-        将搜索结果格式化为指定的JSON格式
+        Format search results into the specified JSON format
 
-        参数:
-        - query: 原始查询
-        - search_data: 搜索结果数据
-        - image_results: 图像搜索结果数据
-        - max_results: 最大结果数量
+        Parameters:
+        - query: original query
+        - search_data: search result data
+        - image_results: image search result data
+        - max_results: maximum result count
 
-        返回:
-        - 格式化的JSON结果
+        Returns:
+        - Formatted JSON result
         """
-        # 初始化结果列表
+        # Initialize result list
         formatted_results = []
 
-        # 处理正常搜索结果
+        # Process normal search results
         results = search_data.get('results', [])
         for index, result in enumerate(results[:max_results]):
-            # 获取内容并处理结尾的省略号
+            # Get content and process trailing ellipsis
             content = result.get('content', '')
 
-            # 添加到索引结果列表
+            # Add to indexed results list
             content_item = {
                 "index": index,
                 "result": content
@@ -149,7 +148,7 @@ class SearXNGClient:
 
             formatted_results.append(content_item)
 
-        # 构建最终结果
+        # Build final result
         final_result = {
             "query": query,
             "content": formatted_results,

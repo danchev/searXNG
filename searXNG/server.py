@@ -7,50 +7,50 @@ from mcp.types import Tool, TextContent, ImageContent, EmbeddedResource, ErrorDa
     BlobResourceContents
 from mcp.shared.exceptions import McpError
 
-from .searXNG_client import SearXNGClient
+from .client import SearXNGClient
 
 
 class SearXNGServer:
     """
-    SearXNG MCP服务器
-    提供搜索功能，通过MCP接口供模型使用
+    SearXNG MCP Server
+    Provides search functionality for models to use through the MCP interface
     """
 
-    def __init__(self, instance_url: str = "https://your-searxng-instance.com"):
+    def __init__(self, instance_url: str = "https://searx.party"):
         """
-        初始化SearXNG服务器
+        Initialize SearXNG server
 
-        参数:
-        - instance_url: SearXNG实例URL
+        Parameters:
+        - instance_url: SearXNG instance URL
         """
         self.searxng_client = SearXNGClient(instance_url=instance_url)
 
     async def search(self, query: str, categories: Optional[List[str]] = None,
                      engines: Optional[List[str]] = None,
-                     language: str = "zh",
+                     language: str = "en",
                      max_results: int = 10,
                      time_range: Optional[str] = None) -> Dict[str, Any]:
         """
-        执行搜索并返回格式化的结果
+        Perform search and return formatted results
 
-        参数:
-        - query: 搜索查询
-        - categories: 搜索类别列表 (例如 ['general', 'images', 'news'])
-        - engines: 搜索引擎列表 (例如 ['google', 'bing', 'duckduckgo'])
-        - language: 搜索语言代码
-        - max_results: 最大结果数量
-        - time_range: 时间范围过滤 ('day', 'week', 'month', 'year')
+        Parameters:
+        - query: search query
+        - categories: search category list (e.g. ['general', 'images', 'news'])
+        - engines: search engine list (e.g. ['google', 'bing', 'duckduckgo'])
+        - language: search language code
+        - max_results: maximum result count
+        - time_range: time range filter ('day', 'week', 'month', 'year')
 
-        返回:
-        - 结构化的搜索结果
+        Returns:
+        - Structured search results dictionary
         """
-        # 设置默认搜索参数
+        # Set default search parameters
         if categories is None:
             categories = ["general"]
         if engines is None:
             engines = ["google", "bing", "duckduckgo"]
 
-        # 使用SearXNG客户端执行搜索
+        # Use SearXNG client to perform search
         search_results = self.searxng_client.search(
             query=query,
             categories=categories,
@@ -65,17 +65,17 @@ class SearXNGServer:
 
     def format_search_results(self, search_results: Dict[str, Any]) -> str:
         """
-        将搜索结果格式化为文本输出
+        Format search results into text output
 
-        参数:
-        - search_results: 搜索结果字典
+        Parameters:
+        - search_results: search results dictionary
 
-        返回:
-        - 格式化的搜索结果文本
+        Returns:
+        - Formatted search results text
         """
-        # 构建格式化输出
+        # Build formatted output
         output = []
-        # 添加内容结果
+        # Add content results
         content_items = search_results.get('content', [])
         if content_items:
             for item in content_items:
@@ -85,77 +85,77 @@ class SearXNGServer:
         return "\n".join(output)
 
 
-async def serve(instance_url: str = "https://your-searxng-instance.com"):
+async def serve(instance_url: str = "https://searx.party"):
     """
-    启动SearXNG MCP服务器
+    Start SearXNG MCP server
 
-    参数:
-    - instance_url: SearXNG实例URL
+    Parameters:
+    - instance_url: SearXNG instance URL
     """
     server = Server("SearXNGServer")
     searxng_server = SearXNGServer(instance_url=instance_url)
 
     @server.list_resources()
     async def handle_list_resources():
-        """列出可用的搜索资源"""
+        """List available search resources"""
         return [
             {
                 "uri": "searxng://web/search",
-                "name": "网络搜索",
-                "description": "使用SearXNG在网络上搜索信息",
+                "name": "Web Search",
+                "description": "Use SearXNG to search the web for information",
                 "mimeType": "application/json",
             }
         ]
 
     @server.read_resource()
     async def handle_read_resource(uri: str) -> List[TextResourceContents | BlobResourceContents]:
-        """读取指定的搜索资源"""
+        """Read specified search resource"""
         if uri.startswith("searxng://"):
-            # 创建一个文本资源内容对象
+            # Create a text resource content object with a placeholder message
             return [
                 TextResourceContents(
                     uri=uri,
                     mimeType="application/json",
-                    text=json.dumps({"message": "此功能暂未实现"}, ensure_ascii=False)
+                    text=json.dumps({"message": "This feature is not yet implemented"}, ensure_ascii=False)
                 )
             ]
-        raise ValueError(f"不支持的URI: {uri}")
+        raise ValueError(f"Unsupported URI: {uri}")
 
     @server.list_tools()
     async def list_tools() -> List[Tool]:
-        """列出可用的搜索工具"""
+        """List available search tools"""
         return [
             Tool(
                 name="web_search",
-                description="使用SearXNG搜索网络信息",
+                description="Use SearXNG to search the web for information",
                 inputSchema={
                     "type": "object",
                     "properties": {
                         "query": {
                             "type": "string",
-                            "description": "搜索查询",
+                            "description": "Search query string",
                         },
                         "categories": {
                             "type": "array",
                             "items": {"type": "string"},
-                            "description": "搜索类别，例如 ['general', 'images', 'news']",
+                            "description": "Search categories, e.g. ['general', 'images', 'news']",
                         },
                         "engines": {
                             "type": "array",
                             "items": {"type": "string"},
-                            "description": "搜索引擎，例如 ['google', 'bing', 'duckduckgo']",
+                            "description": "Search engines, e.g. ['google', 'bing', 'duckduckgo']",
                         },
                         "language": {
                             "type": "string",
-                            "description": "搜索语言代码",
+                            "description": "Search language code (default 'en')",
                         },
                         "max_results": {
                             "type": "integer",
-                            "description": "最大结果数量",
+                            "description": "Maximum number of results to return (default 10)",
                         },
                         "time_range": {
                             "type": "string",
-                            "description": "时间范围过滤 ('day', 'week', 'month', 'year')",
+                            "description": "Time range filter ('day', 'week', 'month', 'year')",
                         }
                     },
                     "required": ["query"],
@@ -167,16 +167,16 @@ async def serve(instance_url: str = "https://your-searxng-instance.com"):
     async def call_tool(
             name: str, arguments: Dict[str, Any]
     ) -> Sequence[TextContent | ImageContent | EmbeddedResource]:
-        """处理工具调用请求"""
+        """Processing tool call request"""
         try:
             if name == "web_search":
                 query = arguments.get("query")
                 if not query:
-                    raise ValueError("缺少必要参数: query")
+                    raise ValueError("Missing required parameter: query")
 
                 categories = arguments.get("categories")
                 engines = arguments.get("engines")
-                language = arguments.get("language", "zh")
+                language = arguments.get("language", "en")
                 max_results = arguments.get("max_results", 10)
                 time_range = arguments.get("time_range")
 
@@ -193,12 +193,12 @@ async def serve(instance_url: str = "https://your-searxng-instance.com"):
 
                 return [TextContent(type="text", text=formatted_results)]
 
-            return [TextContent(type="text", text=f"不支持的工具: {name}")]
+            return [TextContent(type="text", text=f"Unsupported tool: {name}")]
 
         except Exception as e:
-            error = ErrorData(message=f"搜索服务错误: {str(e)}", code=-32603)
+            error = ErrorData(message=f"Search service error: {str(e)}", code=-32603)
             raise McpError(error)
-        
+
     async with stdio_server() as (read_stream, write_stream):
         await server.run(
             read_stream,
