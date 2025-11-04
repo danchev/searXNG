@@ -1,0 +1,23 @@
+{
+  "inputs": [
+    {
+      "type": "promptString",
+      "id": "instance-url",
+      "description": "searXNG instance URL",
+      "default": "https://searx.party",
+    },
+  ],
+  "servers": {
+    "searXNG": {
+      "command": "uv",
+      "args": [
+        "--directory",
+        ".",
+        "run",
+        "searxng",
+        "--instance-url",
+        "${input:instance-url}"
+      ]
+    }
+  }
+}
