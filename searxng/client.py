@@ -126,29 +126,33 @@ class SearXNGClient:
         self, query: str, search_data: Dict[str, Any], max_results: int
     ) -> Dict[str, Any]:
         """
-        Format search results into the specified JSON format
+        Format search results into the specified JSON format, including title and url.
 
         Parameters:
-        - query: original query
-        - search_data: search result data
-        - image_results: image search result data
-        - max_results: maximum result count
+            query: original query
+            search_data: search result data
+            max_results: maximum result count
 
         Returns:
-        - Formatted JSON result
+            Formatted JSON result with each item containing index, title, url, and result (content).
         """
         # Initialize result list
-        formatted_results = []
+        formatted_results: list[dict] = []
 
         # Process normal search results
         results = search_data.get("results", [])
         for index, result in enumerate(results[:max_results]):
-            # Get content and process trailing ellipsis
+            title = result.get("title", "")
+            url = result.get("url", "")
             content = result.get("content", "")
 
             # Add to indexed results list
-            content_item = {"index": index, "result": content}
-
+            content_item = {
+                "index": index,
+                "title": title,
+                "url": url,
+                "result": content,
+            }
             formatted_results.append(content_item)
 
         # Build final result

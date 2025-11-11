@@ -1,4 +1,4 @@
-from .server import serve
+from searxng.server import serve
 
 
 def main():

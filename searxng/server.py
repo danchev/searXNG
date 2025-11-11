@@ -1,27 +1,38 @@
 import json
-from typing import Any, Sequence, Dict, List, Optional
-from pydantic import AnyUrl
+from typing import Any, Optional, Sequence
 
 from mcp.server import Server
 from mcp.server.stdio import stdio_server
+from mcp.shared.exceptions import McpError
 from mcp.types import (
-    Tool,
-    TextContent,
-    ImageContent,
+    BlobResourceContents,
     EmbeddedResource,
     ErrorData,
+    Icon,
+    ImageContent,
+    TextContent,
     TextResourceContents,
-    BlobResourceContents,
+    Tool,
+    ToolAnnotations,
 )
-from mcp.shared.exceptions import McpError
+from pydantic import AnyUrl
 
-from .client import SearXNGClient
+from searxng.client import SearXNGClient
+
+# Default SearXNG search parameters
+DEFAULT_CATEGORIES = ["general"]
+DEFAULT_ENGINES = ["google", "bing", "duckduckgo"]
+DEFAULT_LANGUAGE = "en"
+DEFAULT_MAX_RESULTS = 10
+DEFAULT_SAFESEARCH = 1
 
 
 class SearXNGServer:
     """
     SearXNG MCP Server
-    Provides search functionality for models to use through the MCP interface
+    Provides search functionality for models to use through the MCP interface.
+
+    Search results include for each result: index, title, url, and result (content).
     """
 
     def __init__(self, instance_url: str = "https://searx.party"):
@@ -36,31 +47,37 @@ class SearXNGServer:
     async def search(
         self,
         query: str,
-        categories: Optional[List[str]] = None,
-        engines: Optional[List[str]] = None,
-        language: str = "en",
-        max_results: int = 10,
+        categories: Optional[list[str]] = None,
+        engines: Optional[list[str]] = None,
+        language: str = DEFAULT_LANGUAGE,
+        max_results: int = DEFAULT_MAX_RESULTS,
         time_range: Optional[str] = None,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
-        Perform search and return formatted results
+        Perform search and return formatted results.
 
-        Parameters:
-        - query: search query
-        - categories: search category list (e.g. ['general', 'images', 'news'])
-        - engines: search engine list (e.g. ['google', 'bing', 'duckduckgo'])
-        - language: search language code
-        - max_results: maximum result count
-        - time_range: time range filter ('day', 'week', 'month', 'year')
+        Args:
+            query: Search query string.
+            categories: List of search categories (e.g. ['general', 'images', 'news']).
+            engines: List of search engines (e.g. ['google', 'bing', 'duckduckgo']).
+            language: Search language code.
+            max_results: Maximum number of results to return.
+            time_range: Time range filter ('day', 'week', 'month', 'year').
 
         Returns:
-        - Structured search results dictionary
+            dict: Structured search results dictionary with keys:
+                - query: The original query string.
+                - content: List of results, each containing:
+                    - index: Result index.
+                    - title: Result title.
+                    - url: Result URL.
+                    - result: Result content/summary.
         """
         # Set default search parameters
         if categories is None:
-            categories = ["general"]
+            categories = DEFAULT_CATEGORIES.copy()
         if engines is None:
-            engines = ["google", "bing", "duckduckgo"]
+            engines = DEFAULT_ENGINES.copy()
 
         # Use SearXNG client to perform search
         search_results = self.searxng_client.search(
@@ -70,20 +87,20 @@ class SearXNGServer:
             language=language,
             max_results=max_results,
             time_range=time_range,
-            safesearch=1,
+            safesearch=DEFAULT_SAFESEARCH,
         )
 
         return search_results
 
-    def format_search_results(self, search_results: Dict[str, Any]) -> str:
+    def format_search_results(self, search_results: dict[str, Any]) -> list[str]:
         """
-        Format search results into text output
+        Format search results into text output.
 
-        Parameters:
-        - search_results: search results dictionary
+        Args:
+            search_results: Search results dictionary as returned by `search()`.
 
         Returns:
-        - Formatted search results text
+            str: Formatted search results text, each line includes index, title, url, and result content.
         """
         # Build formatted output
         output = []
@@ -91,10 +108,13 @@ class SearXNGServer:
         content_items = search_results.get("content", [])
         if content_items:
             for item in content_items:
-                output.append(f"[{item.get('index', '')}] {item.get('result', '')}")
-            output.append("")
+                index = item.get("index", "")
+                title = item.get("title", "")
+                url = item.get("url", "")
+                result = item.get("result", "")
+                output.append(f"[{index}] {title}\nURL: {url}\n{result}\n")
 
-        return "\n".join(output)
+        return output
 
 
 async def serve(instance_url: str = "https://searx.party"):
@@ -122,7 +142,7 @@ async def serve(instance_url: str = "https://searx.party"):
     @server.read_resource()
     async def handle_read_resource(
         uri: str,
-    ) -> List[TextResourceContents | BlobResourceContents]:
+    ) -> list[TextResourceContents | BlobResourceContents]:
         """Read specified search resource"""
         if uri.startswith("searxng://"):
             # Create a text resource content object with a placeholder message
@@ -139,7 +159,7 @@ async def serve(instance_url: str = "https://searx.party"):
         raise ValueError(f"Unsupported URI: {uri}")
 
     @server.list_tools()
-    async def list_tools() -> List[Tool]:
+    async def list_tools() -> list[Tool]:
         """List available search tools"""
         return [
             Tool(
@@ -177,12 +197,38 @@ async def serve(instance_url: str = "https://searx.party"):
                     },
                     "required": ["query"],
                 },
+                title="Web Search Tool",
+                outputSchema=None,
+                icons=[
+                    Icon(
+                        src="search-icon.png",
+                        mimeType="image/png",
+                        sizes=["32x32"],
+                        model_config={},
+                    ),
+                ],
+                annotations=ToolAnnotations(
+                    title="SearXNG Tool",
+                    readOnlyHint=True,
+                    destructiveHint=False,
+                    idempotentHint=True,
+                    openWorldHint=False,
+                    model_config={"version": "1.0"},
+                ),
+                meta={
+                    "category": "search",
+                    "tags": ["web", "search", "tool"],
+                },
+                model_config={
+                    "timeout": 30,
+                    "retry": 3,
+                },
             )
         ]
 
     @server.call_tool()
     async def call_tool(
-        name: str, arguments: Dict[str, Any]
+        name: str, arguments: dict[str, Any]
     ) -> Sequence[TextContent | ImageContent | EmbeddedResource]:
         """Processing tool call request"""
         try:
@@ -193,8 +239,8 @@ async def serve(instance_url: str = "https://searx.party"):
 
                 categories = arguments.get("categories")
                 engines = arguments.get("engines")
-                language = arguments.get("language", "en")
-                max_results = arguments.get("max_results", 10)
+                language = arguments.get("language", DEFAULT_LANGUAGE)
+                max_results = arguments.get("max_results", DEFAULT_MAX_RESULTS)
                 time_range = arguments.get("time_range")
 
                 search_results = await searxng_server.search(
@@ -208,12 +254,25 @@ async def serve(instance_url: str = "https://searx.party"):
 
                 formatted_results = searxng_server.format_search_results(search_results)
 
-                return [TextContent(type="text", text=formatted_results)]
+                return [
+                    TextContent(
+                        type="text",
+                        text=result,
+                    ) for result in formatted_results
+                ]
 
-            return [TextContent(type="text", text=f"Unsupported tool: {name}")]
+            return [
+                TextContent(
+                    type="text",
+                    text=f"Unsupported tool: {name}",
+                )
+            ]
 
         except Exception as e:
-            error = ErrorData(message=f"Search service error: {str(e)}", code=-32603)
+            error = ErrorData(
+                message=f"Search service error: {e}",
+                code=-32603,
+            )
             raise McpError(error)
 
     async with stdio_server() as (read_stream, write_stream):
