@@ -17,7 +17,12 @@ Set FontSize 18
 Set Width 1300
 Set Height 650
 
-Type@100ms "crush run 'What are the latest financial news on AMD (ticker: AMD)' | glow"
+Hide
+Type 'searxng() { crush run -q "$@" | glow; } && clear'
+Enter
+Show
+
+Type@100ms "searxng 'What are the latest financial news on AMD (ticker: AMD)'"
 
 Sleep 500ms
 
