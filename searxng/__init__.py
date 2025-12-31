@@ -1,11 +1,11 @@
+import argparse
+import asyncio
+
 from searxng.server import serve
 
 
-def main():
+def main() -> None:
     """SearXNG MCP Server - Web search functionality for MCP"""
-    import argparse
-    import asyncio
-
     parser = argparse.ArgumentParser(
         description="MCP server that provides network search capabilities for models"
     )
