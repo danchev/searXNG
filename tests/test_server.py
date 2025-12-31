@@ -1,5 +1,6 @@
 """Tests for application layer (server module)."""
 
+import json
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
@@ -223,8 +224,12 @@ class TestServeFunction:
             if list_resources_func:
                 resources = await list_resources_func()
                 assert len(resources) == 1
-                assert resources[0]["uri"] == "searxng://web/search"
-                assert resources[0]["name"] == "Web Search"
+                resource = resources[0]
+                assert resource["uri"] == "searxng://web/search"
+                assert resource["name"] == "SearXNG Web Search"
+                assert resource["title"] == "🔍 SearXNG Web Search"
+                assert "SearXNG meta-search engine" in resource["description"]
+                assert resource["mimeType"] == "application/json"
 
     @pytest.mark.asyncio
     async def test_read_resource_handler_valid_uri(self) -> None:
@@ -265,9 +270,15 @@ class TestServeFunction:
             if read_resource_func:
                 from pydantic import AnyUrl
 
-                result = await read_resource_func(AnyUrl("searxng://test"))
-                assert '"message"' in result
-                assert "not yet implemented" in result
+                result = await read_resource_func(AnyUrl("searxng://web/search"))
+                result_data = json.loads(result)
+                assert result_data["resource"] == "Web Search"
+                assert result_data["description"]
+                assert result_data["usage"]["tool_name"] == "web_search"
+                assert "query" in result_data["usage"]["required_parameters"]
+                assert "categories" in result_data["usage"]["optional_parameters"]
+                assert "engines" in result_data["usage"]["optional_parameters"]
+                assert len(result_data["examples"]) == 3
 
     @pytest.mark.asyncio
     async def test_read_resource_handler_invalid_uri(self) -> None:
@@ -310,6 +321,48 @@ class TestServeFunction:
 
                 with pytest.raises(ValueError, match="Unsupported URI"):
                     await read_resource_func(AnyUrl("http://invalid"))
+
+    @pytest.mark.asyncio
+    async def test_read_resource_handler_unknown_resource(self) -> None:
+        """Test the read_resource handler with unknown searxng resource."""
+        with (
+            patch("searxng.server.Server") as mock_server_class,
+            patch("searxng.adapters.HttpSearchAdapter"),
+        ):
+            mock_server_instance = Mock()
+            mock_server_class.return_value = mock_server_instance
+
+            read_resource_func = None
+
+            def capture_read_resource():
+                def decorator(func):
+                    nonlocal read_resource_func
+                    read_resource_func = func
+                    return func
+
+                return decorator
+
+            mock_server_instance.read_resource = capture_read_resource
+
+            from searxng.server import serve
+
+            with patch("searxng.server.stdio_server") as mock_stdio:
+                mock_stdio.return_value.__aenter__ = AsyncMock(
+                    return_value=(Mock(), Mock())
+                )
+                mock_stdio.return_value.__aexit__ = AsyncMock(return_value=None)
+                mock_server_instance.run = AsyncMock()
+                mock_server_instance.create_initialization_options = Mock(
+                    return_value={}
+                )
+
+                await serve()
+
+            if read_resource_func:
+                from pydantic import AnyUrl
+
+                with pytest.raises(ValueError, match="Unknown resource"):
+                    await read_resource_func(AnyUrl("searxng://unknown"))
 
     @pytest.mark.asyncio
     async def test_list_tools_handler(self) -> None:

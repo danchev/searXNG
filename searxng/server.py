@@ -82,8 +82,9 @@ async def serve(instance_url: str = "https://searx.party") -> None:
         return [
             {
                 "uri": "searxng://web/search",
-                "name": "Web Search",
-                "description": "Use SearXNG to search the web for information",
+                "name": "SearXNG Web Search",
+                "title": "🔍 SearXNG Web Search",
+                "description": "Search the web using SearXNG meta-search engine with support for multiple engines, categories, and filters",
                 "mimeType": "application/json",
             }
         ]
@@ -97,10 +98,67 @@ async def serve(instance_url: str = "https://searx.party") -> None:
         if not uri_str.startswith("searxng://"):
             raise ValueError(f"Unsupported URI: {uri_str}")
 
-        return json.dumps(
-            {"message": "This feature is not yet implemented"},
-            ensure_ascii=False,
-        )
+        if uri_str != "searxng://web/search":
+            raise ValueError(f"Unknown resource: {uri_str}")
+
+        resource_info = {
+            "resource": "Web Search",
+            "description": "Use SearXNG to search the web for information",
+            "usage": {
+                "tool_name": "web_search",
+                "required_parameters": ["query"],
+                "optional_parameters": {
+                    "categories": {
+                        "type": "array",
+                        "description": "Search categories",
+                        "default": list(DEFAULT_CATEGORIES),
+                        "examples": ["general", "images", "news", "videos"],
+                    },
+                    "engines": {
+                        "type": "array",
+                        "description": "Search engines to use",
+                        "default": list(DEFAULT_ENGINES),
+                        "examples": ["google", "bing", "duckduckgo", "brave"],
+                    },
+                    "language": {
+                        "type": "string",
+                        "description": "Search language code",
+                        "default": DEFAULT_LANGUAGE,
+                        "examples": ["en", "es", "fr", "de"],
+                    },
+                    "max_results": {
+                        "type": "integer",
+                        "description": "Maximum number of results",
+                        "default": DEFAULT_MAX_RESULTS,
+                        "range": "1-100",
+                    },
+                    "time_range": {
+                        "type": "string",
+                        "description": "Filter results by time",
+                        "options": ["day", "week", "month", "year"],
+                    },
+                },
+            },
+            "examples": [
+                {
+                    "description": "Basic search",
+                    "query": "python programming",
+                },
+                {
+                    "description": "Search with specific engines",
+                    "query": "artificial intelligence",
+                    "engines": ["google", "bing"],
+                },
+                {
+                    "description": "Recent news search",
+                    "query": "technology news",
+                    "categories": ["news"],
+                    "time_range": "week",
+                },
+            ],
+        }
+
+        return json.dumps(resource_info, ensure_ascii=False, indent=2)
 
     @server.list_tools()
     async def list_tools() -> list[Tool]:
