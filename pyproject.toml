@@ -44,12 +44,16 @@ build-backend = "uv_build"
 [dependency-groups]
 dev = [
     "pyright>=1.1.407",
-    "pytest>=7.4.0",
-    "pytest-asyncio>=0.21.0",
-    "pytest-cov>=4.1.0",
     "ruff>=0.14.10",
     "ty>=0.0.8",
     {include-group = "commit"},
+    {include-group = "test"},
+]
+test =[
+    "pytest>=7.4.0",
+    "pytest-xdist>=3.8.0",
+    "pytest-asyncio>=0.21.0",
+    "pytest-cov>=4.1.0",
 ]
 commit = [
     "commitizen>=4.11.0",
