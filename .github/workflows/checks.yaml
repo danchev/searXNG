@@ -1,0 +1,13 @@
+name: Master branch checks
+
+on:
+  push:
+    branches:
+      - "v*.*.*"
+    tags:
+      - "v*.*.*"
+  workflow_dispatch:
+
+jobs:
+  checks:
+    uses: ./.github/workflows/shared.yaml
