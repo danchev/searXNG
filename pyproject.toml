@@ -6,8 +6,9 @@ authors = [
     { name = "D. Danchev", email = "12420863+danchev@users.noreply.github.com" },
 ]
 classifiers = [
-    "License :: OSI Approved :: GNU Affero General Public License v3 or later (AGPLv3+)",
-    "Development Status :: 2 - Pre-Alpha",
+    # No "License ::" classifier: PEP 639 deprecates them in favour of the
+    # license/license-files fields below.
+    "Development Status :: 4 - Beta",
     "Operating System :: OS Independent",
     "Intended Audience :: Developers",
     "Intended Audience :: Information Technology",
@@ -25,7 +26,8 @@ classifiers = [
     "Programming Language :: Python :: 3 :: Only",
 ]
 readme = "README.md"
-license = { text = "AGPL-3.0-or-later" }
+license = "AGPL-3.0-or-later"
+license-files = ["LICENSE"]
 dependencies = [
     "mcp[cli]>=2.0.0",
     "requests>=2.34.2",
@@ -41,7 +43,7 @@ Issues = "https://github.com/danchev/searXNG/issues"
 searxng = "searxng.__init__:main"
 
 [build-system]
-requires = ["uv_build>=0.9.21,<0.10.0"]
+requires = ["uv_build>=0.9.21,<0.13.0"]
 build-backend = "uv_build"
 
 [dependency-groups]
@@ -55,7 +57,7 @@ dev = [
 test =[
     "pytest>=7.4.0",
     "pytest-xdist>=3.8.0",
-    "pytest-asyncio>=0.21.0",
+    "pytest-asyncio>=0.24.0",
     "pytest-cov>=4.1.0",
 ]
 commit = [

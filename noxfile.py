@@ -5,7 +5,7 @@
 # ///
 import nox
 
-python_versions = ["3.12", "3.13", "3.14"]
+python_versions = ["3.11", "3.12", "3.13", "3.14"]
 
 
 @nox.session(venv_backend="uv", python=python_versions)
