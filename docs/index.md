@@ -26,8 +26,20 @@ This server provides the following main features:
     - `categories` (array): Search categories, e.g. ['general', 'images', 'news']
     - `engines` (array): Search engines, e.g. ['google', 'bing', 'duckduckgo']
     - `language` (string): Language code for search, default is "en"
-    - `max_results` (integer): Maximum number of results, default is 10
+    - `max_results` (integer): Maximum number of results, default is 10 (1-100)
     - `time_range` (string): Time range filter ('day', 'week', 'month', 'year')
+
+If a search cannot be completed (the instance is unreachable, rate-limits the
+request, or returns a malformed response), the tool returns an error result
+describing the failure rather than an empty result list.
+
+## Command Line Options
+
+| Option | Default | Description |
+| --- | --- | --- |
+| `--instance-url` | `https://searx.party` | SearXNG instance to query. Must be an absolute `http(s)` URL. |
+| `--timeout` | `30` | Per-search request timeout, in seconds. |
+| `--log-level` | `WARNING` | Logging verbosity: `DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL`. Logs are written to stderr. |
 
 ## Usage Example
 
