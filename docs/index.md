@@ -81,22 +81,32 @@ To set up SearXNG as an MCP server, add one of the following to your MCP configu
 }
 ```
 
-**Docker setup:**
+This launches the server over stdio, which is the right choice for a
+local client.
+
+**Remote setup (Streamable HTTP):**
+
+Start the server as a long-running process:
+
+```bash
+searxng --transport http --host 0.0.0.0 --port 8000 \
+        --instance-url=https://searx.party
+```
+
+Then point the client at its `/mcp` endpoint:
+
 ```json
 "mcpServers": {
   "searxng": {
-    "command": "docker",
-    "args": [
-      "run",
-      "-i",
-      "--rm",
-      "supercorp/supergateway:uvx",
-      "--stdio",
-      "uvx searxng --instance-url=https://searx.party"
-    ]
+    "url": "http://your-host:8000/mcp"
   }
 }
 ```
+
+Note the `--host 0.0.0.0` needed to accept connections from other
+machines, and the security caveat above: the server is unauthenticated,
+so restrict it to a trusted network or front it with an authenticating
+reverse proxy.
 
 ### Example Invocation
 
