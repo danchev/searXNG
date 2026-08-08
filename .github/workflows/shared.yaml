@@ -22,9 +22,11 @@ jobs:
       - name: Install dependencies
         run: uv sync --frozen --all-extras --python 3.12
 
-      - uses: pre-commit/action@v3.0.1
-        with:
-          extra_args: --all-files --verbose
+      # Run pre-commit directly rather than via pre-commit/action, which
+      # pulls in a deprecated actions/cache@v4 (Node 20) and duplicates
+      # caching setup-uv already provides.
+      - name: Run pre-commit
+        run: uv run pre-commit run --all-files --verbose
         env:
           SKIP: no-commit-to-branch
 
