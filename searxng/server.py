@@ -45,6 +45,8 @@ DEFAULT_TRANSPORT = "stdio"
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 8000
 STREAMABLE_HTTP_PATH = "/mcp"
+# Hosts for which the MCP SDK auto-enables DNS-rebinding protection.
+LOOPBACK_HOSTS = frozenset({"127.0.0.1", "localhost", "::1"})
 
 SEARCH_RESOURCE_URI = "searxng://web/search"
 
@@ -349,6 +351,18 @@ async def _serve_http(server: Server, host: str, port: int) -> None:
     revision; new deployments should use this rather than ``/sse``.
     """
     import uvicorn
+
+    if host not in LOOPBACK_HOSTS:
+        # The SDK only auto-enables DNS-rebinding protection for loopback
+        # binds, since it cannot infer valid hostnames for a public one.
+        # Say so plainly rather than letting the protection lapse silently.
+        logger.warning(
+            "Serving on %s:%s without authentication or DNS-rebinding "
+            "protection. Restrict this to a trusted network or place an "
+            "authenticating reverse proxy in front of it.",
+            host,
+            port,
+        )
 
     app = server.streamable_http_app(
         streamable_http_path=STREAMABLE_HTTP_PATH,

@@ -65,6 +65,12 @@ searxng --transport http --host 127.0.0.1 --port 8000
 `127.0.0.1` by default. Only pass `--host 0.0.0.0` on a trusted network,
 or put an authenticating reverse proxy in front of it.
 
+Binding to a non-loopback host also disables the MCP SDK's DNS-rebinding
+protection, which it can only enable automatically for `127.0.0.1`,
+`localhost`, and `::1`. On a loopback bind a forged `Host` header is
+rejected with `421 Misdirected Request`; on a public bind any `Host` is
+accepted. The server logs a warning at startup when this applies.
+
 ## Usage Example
 
 ### Configure as an MCP Service

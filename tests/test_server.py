@@ -1,6 +1,7 @@
 """Tests for application layer (server module)."""
 
 import json
+import logging
 from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock, Mock, patch
@@ -500,6 +501,69 @@ class TestServeFunction:
             await serve(transport="http")
 
         mock_stdio.assert_not_called()
+
+    @pytest.mark.parametrize("host", ["0.0.0.0", "192.168.1.10", "example.com"])
+    async def test_serve_http_warns_on_public_bind(
+        self, host: str, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """A non-loopback bind loses DNS-rebinding protection; say so."""
+        from searxng.server import serve
+
+        mock_uvicorn = Mock()
+        mock_uvicorn.Server.return_value.serve = AsyncMock()
+
+        with (
+            patch("searxng.adapters.HttpSearchAdapter", return_value=Mock()),
+            patch("searxng.server.build_server", new_callable=Mock),
+            patch.dict("sys.modules", {"uvicorn": mock_uvicorn}),
+            caplog.at_level(logging.WARNING, logger="searxng.server"),
+        ):
+            await serve(transport="http", host=host)
+
+        assert "without authentication" in caplog.text
+        assert host in caplog.text
+
+    @pytest.mark.parametrize("host", ["127.0.0.1", "localhost", "::1"])
+    async def test_serve_http_quiet_on_loopback_bind(
+        self, host: str, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """Loopback binds keep DNS-rebinding protection, so no warning."""
+        from searxng.server import serve
+
+        mock_uvicorn = Mock()
+        mock_uvicorn.Server.return_value.serve = AsyncMock()
+
+        with (
+            patch("searxng.adapters.HttpSearchAdapter", return_value=Mock()),
+            patch("searxng.server.build_server", new_callable=Mock),
+            patch.dict("sys.modules", {"uvicorn": mock_uvicorn}),
+            caplog.at_level(logging.WARNING, logger="searxng.server"),
+        ):
+            await serve(transport="http", host=host)
+
+        assert "without authentication" not in caplog.text
+
+    async def test_serve_stdio_does_not_warn(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """The stdio transport is not network-exposed, so it never warns."""
+        from searxng.server import serve
+
+        with (
+            patch("searxng.adapters.HttpSearchAdapter", return_value=Mock()),
+            patch("searxng.server.stdio_server", new_callable=Mock) as mock_stdio,
+            patch("searxng.server.build_server", new_callable=Mock) as mock_build,
+            caplog.at_level(logging.WARNING, logger="searxng.server"),
+        ):
+            mock_stdio.return_value.__aenter__ = AsyncMock(
+                return_value=(Mock(), Mock())
+            )
+            mock_stdio.return_value.__aexit__ = AsyncMock(return_value=False)
+            mock_build.return_value.run = AsyncMock()
+
+            await serve()
+
+        assert "without authentication" not in caplog.text
 
     @pytest.mark.parametrize("transport", ["sse", "websocket", "", "STDIO"])
     async def test_serve_rejects_unknown_transport(self, transport: str) -> None:
