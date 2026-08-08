@@ -40,6 +40,30 @@ describing the failure rather than an empty result list.
 | `--instance-url` | `https://searx.party` | SearXNG instance to query. Must be an absolute `http(s)` URL. |
 | `--timeout` | `30` | Per-search request timeout, in seconds. |
 | `--log-level` | `WARNING` | Logging verbosity: `DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL`. Logs are written to stderr. |
+| `--transport` | `stdio` | Transport to serve on: `stdio` or `http`. |
+| `--host` | `127.0.0.1` | Host to bind when `--transport=http`. |
+| `--port` | `8000` | Port to bind when `--transport=http`. |
+
+## Transports
+
+By default the server speaks **stdio**, which is what local MCP clients
+(Claude Desktop, IDE integrations, `uvx`) launch it with.
+
+For remote access, `--transport http` serves the **Streamable HTTP**
+transport at `/mcp`:
+
+```bash
+searxng --transport http --host 127.0.0.1 --port 8000
+# endpoint: http://127.0.0.1:8000/mcp
+```
+
+> The legacy SSE transport is intentionally not implemented. It was
+> superseded by Streamable HTTP in the 2025-03-26 MCP protocol revision
+> and should not be used for new deployments.
+
+**Security:** the server performs no authentication, so it binds to
+`127.0.0.1` by default. Only pass `--host 0.0.0.0` on a trusted network,
+or put an authenticating reverse proxy in front of it.
 
 ## Usage Example
 

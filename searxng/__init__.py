@@ -3,7 +3,14 @@ import asyncio
 import logging
 import sys
 
-from searxng.server import DEFAULT_INSTANCE_URL, serve
+from searxng.server import (
+    DEFAULT_HOST,
+    DEFAULT_INSTANCE_URL,
+    DEFAULT_PORT,
+    DEFAULT_TRANSPORT,
+    STREAMABLE_HTTP_PATH,
+    serve,
+)
 
 DEFAULT_TIMEOUT = 30
 
@@ -30,6 +37,30 @@ def _build_parser() -> argparse.ArgumentParser:
         choices=("DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"),
         help="Logging verbosity (default: WARNING)",
     )
+    parser.add_argument(
+        "--transport",
+        default=DEFAULT_TRANSPORT,
+        choices=("stdio", "http"),
+        help=(
+            f"Transport to serve on (default: {DEFAULT_TRANSPORT}). "
+            f"'http' serves Streamable HTTP at {STREAMABLE_HTTP_PATH}"
+        ),
+    )
+    parser.add_argument(
+        "--host",
+        default=DEFAULT_HOST,
+        help=(
+            f"Host to bind when --transport=http (default: {DEFAULT_HOST}). "
+            "Use 0.0.0.0 to accept remote connections; the server is "
+            "unauthenticated, so only do so on a trusted network."
+        ),
+    )
+    parser.add_argument(
+        "--port",
+        type=int,
+        default=DEFAULT_PORT,
+        help=f"Port to bind when --transport=http (default: {DEFAULT_PORT})",
+    )
     return parser
 
 
@@ -48,8 +79,19 @@ def main() -> None:
     if args.timeout <= 0:
         parser.error("--timeout must be a positive number of seconds")
 
+    if not 1 <= args.port <= 65535:
+        parser.error("--port must be between 1 and 65535")
+
     try:
-        asyncio.run(serve(instance_url=args.instance_url, timeout=args.timeout))
+        asyncio.run(
+            serve(
+                instance_url=args.instance_url,
+                timeout=args.timeout,
+                transport=args.transport,
+                host=args.host,
+                port=args.port,
+            )
+        )
     except KeyboardInterrupt:
         pass
     except ValueError as e:

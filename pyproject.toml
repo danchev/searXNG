@@ -31,6 +31,9 @@ license-files = ["LICENSE"]
 dependencies = [
     "mcp[cli]>=2.0.0",
     "requests>=2.34.2",
+    # Imported directly to serve the Streamable HTTP transport. Also a
+    # transitive mcp dependency, but declared here because we import it.
+    "uvicorn>=0.34.0",
 ]
 requires-python = ">=3.11"
 

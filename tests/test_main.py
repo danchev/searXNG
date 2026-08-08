@@ -5,7 +5,12 @@ from unittest.mock import Mock, patch
 import pytest
 
 from searxng import main
-from searxng.server import DEFAULT_INSTANCE_URL
+from searxng.server import (
+    DEFAULT_HOST,
+    DEFAULT_INSTANCE_URL,
+    DEFAULT_PORT,
+    DEFAULT_TRANSPORT,
+)
 
 
 def _run_main(argv: list[str]) -> Mock:
@@ -24,26 +29,68 @@ class TestMain:
     """Test the command line entry point."""
 
     def test_uses_defaults_when_no_args_given(self) -> None:
-        """Default instance URL and timeout are passed through to serve()."""
+        """Every serve() argument defaults to the documented value."""
         mock_serve = _run_main([])
 
         mock_serve.assert_called_once_with(
-            instance_url=DEFAULT_INSTANCE_URL, timeout=30
+            instance_url=DEFAULT_INSTANCE_URL,
+            timeout=30,
+            transport=DEFAULT_TRANSPORT,
+            host=DEFAULT_HOST,
+            port=DEFAULT_PORT,
         )
+
+    def test_defaults_to_stdio_on_loopback(self) -> None:
+        """The server must not listen on a public interface by default."""
+        kwargs = _run_main([]).call_args.kwargs
+
+        assert kwargs["transport"] == "stdio"
+        assert kwargs["host"] == "127.0.0.1"
 
     def test_accepts_custom_instance_url(self) -> None:
         """A custom --instance-url reaches serve()."""
-        mock_serve = _run_main(["--instance-url", "https://custom.searx"])
+        kwargs = _run_main(["--instance-url", "https://custom.searx"]).call_args.kwargs
 
-        mock_serve.assert_called_once_with(
-            instance_url="https://custom.searx", timeout=30
-        )
+        assert kwargs["instance_url"] == "https://custom.searx"
 
     def test_accepts_custom_timeout(self) -> None:
         """A custom --timeout reaches serve()."""
-        mock_serve = _run_main(["--timeout", "5"])
+        kwargs = _run_main(["--timeout", "5"]).call_args.kwargs
 
-        mock_serve.assert_called_once_with(instance_url=DEFAULT_INSTANCE_URL, timeout=5)
+        assert kwargs["timeout"] == 5
+
+    def test_accepts_http_transport_options(self) -> None:
+        """--transport/--host/--port reach serve()."""
+        kwargs = _run_main(
+            ["--transport", "http", "--host", "0.0.0.0", "--port", "9000"]
+        ).call_args.kwargs
+
+        assert kwargs["transport"] == "http"
+        assert kwargs["host"] == "0.0.0.0"
+        assert kwargs["port"] == 9000
+
+    def test_rejects_unknown_transport(self) -> None:
+        """argparse rejects a transport outside the supported choices."""
+        with (
+            patch("sys.argv", ["searxng", "--transport", "sse"]),
+            patch("searxng.asyncio.run"),
+            pytest.raises(SystemExit) as exc_info,
+        ):
+            main()
+
+        assert exc_info.value.code == 2
+
+    @pytest.mark.parametrize("port", ["0", "65536", "-1"])
+    def test_rejects_out_of_range_port(self, port: str) -> None:
+        """A port outside 1-65535 exits with argparse's usage error."""
+        with (
+            patch("sys.argv", ["searxng", "--port", port]),
+            patch("searxng.asyncio.run"),
+            pytest.raises(SystemExit) as exc_info,
+        ):
+            main()
+
+        assert exc_info.value.code == 2
 
     def test_rejects_non_positive_timeout(self) -> None:
         """A non-positive timeout exits with argparse's usage error."""

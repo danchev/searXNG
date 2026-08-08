@@ -1365,6 +1365,7 @@ source = { editable = "." }
 dependencies = [
     { name = "mcp", extra = ["cli"] },
     { name = "requests" },
+    { name = "uvicorn" },
 ]
 
 [package.dev-dependencies]
@@ -1394,6 +1395,7 @@ test = [
 requires-dist = [
     { name = "mcp", extras = ["cli"], specifier = ">=2.0.0" },
     { name = "requests", specifier = ">=2.34.2" },
+    { name = "uvicorn", specifier = ">=0.34.0" },
 ]
 
 [package.metadata.requires-dev]

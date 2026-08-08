@@ -459,3 +459,77 @@ class TestServeFunction:
                 await serve()
 
         mock_adapter.close.assert_called_once()
+
+    async def test_serve_http_builds_streamable_http_app(self) -> None:
+        """--transport http serves the Streamable HTTP ASGI app via uvicorn."""
+        from searxng.server import STREAMABLE_HTTP_PATH, serve
+
+        mock_adapter = Mock()
+        mock_uvicorn = Mock()
+        mock_uvicorn.Server.return_value.serve = AsyncMock()
+
+        with (
+            patch("searxng.adapters.HttpSearchAdapter", return_value=mock_adapter),
+            patch("searxng.server.build_server", new_callable=Mock) as mock_build,
+            patch.dict("sys.modules", {"uvicorn": mock_uvicorn}),
+        ):
+            await serve(transport="http", host="0.0.0.0", port=9123)
+
+        mock_build.return_value.streamable_http_app.assert_called_once_with(
+            streamable_http_path=STREAMABLE_HTTP_PATH, host="0.0.0.0"
+        )
+        config_kwargs = mock_uvicorn.Config.call_args.kwargs
+        assert config_kwargs["host"] == "0.0.0.0"
+        assert config_kwargs["port"] == 9123
+        mock_uvicorn.Server.return_value.serve.assert_awaited_once()
+        mock_adapter.close.assert_called_once()
+
+    async def test_serve_http_does_not_use_stdio(self) -> None:
+        """The http transport must not also grab stdin/stdout."""
+        from searxng.server import serve
+
+        mock_uvicorn = Mock()
+        mock_uvicorn.Server.return_value.serve = AsyncMock()
+
+        with (
+            patch("searxng.adapters.HttpSearchAdapter", return_value=Mock()),
+            patch("searxng.server.build_server", new_callable=Mock),
+            patch("searxng.server.stdio_server", new_callable=Mock) as mock_stdio,
+            patch.dict("sys.modules", {"uvicorn": mock_uvicorn}),
+        ):
+            await serve(transport="http")
+
+        mock_stdio.assert_not_called()
+
+    @pytest.mark.parametrize("transport", ["sse", "websocket", "", "STDIO"])
+    async def test_serve_rejects_unknown_transport(self, transport: str) -> None:
+        """An unsupported transport fails fast, before any adapter is built."""
+        from searxng.server import serve
+
+        with (
+            patch("searxng.adapters.HttpSearchAdapter") as mock_adapter_cls,
+            pytest.raises(ValueError, match="Transport must be one of"),
+        ):
+            await serve(transport=transport)
+
+        mock_adapter_cls.assert_not_called()
+
+    async def test_serve_closes_adapter_when_http_fails(self) -> None:
+        """The adapter is released if the HTTP server loop raises."""
+        from searxng.server import serve
+
+        mock_adapter = Mock()
+        mock_uvicorn = Mock()
+        mock_uvicorn.Server.return_value.serve = AsyncMock(
+            side_effect=RuntimeError("bind failed")
+        )
+
+        with (
+            patch("searxng.adapters.HttpSearchAdapter", return_value=mock_adapter),
+            patch("searxng.server.build_server", new_callable=Mock),
+            patch.dict("sys.modules", {"uvicorn": mock_uvicorn}),
+            pytest.raises(RuntimeError, match="bind failed"),
+        ):
+            await serve(transport="http")
+
+        mock_adapter.close.assert_called_once()

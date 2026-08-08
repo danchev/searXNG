@@ -38,6 +38,14 @@ DEFAULT_LANGUAGE = "en"
 DEFAULT_MAX_RESULTS = 10
 DEFAULT_INSTANCE_URL = "https://searx.party"
 
+# "sse" is intentionally absent: it was superseded by Streamable HTTP in the
+# 2025-03-26 protocol revision and should not be used for new deployments.
+VALID_TRANSPORTS = frozenset({"stdio", "http"})
+DEFAULT_TRANSPORT = "stdio"
+DEFAULT_HOST = "127.0.0.1"
+DEFAULT_PORT = 8000
+STREAMABLE_HTTP_PATH = "/mcp"
+
 SEARCH_RESOURCE_URI = "searxng://web/search"
 
 logger = logging.getLogger(__name__)
@@ -324,19 +332,53 @@ def build_server(search_use_case: SearchUseCase) -> Server:
     )
 
 
-async def serve(instance_url: str = DEFAULT_INSTANCE_URL, timeout: int = 30) -> None:
-    """Start SearXNG MCP server."""
+async def _serve_stdio(server: Server) -> None:
+    """Serve over stdio, the transport local MCP clients launch us with."""
+    async with stdio_server() as (read_stream, write_stream):
+        await server.run(
+            read_stream,
+            write_stream,
+            server.create_initialization_options(),
+        )
+
+
+async def _serve_http(server: Server, host: str, port: int) -> None:
+    """Serve over Streamable HTTP for remote clients.
+
+    Streamable HTTP superseded the SSE transport in the 2025-03-26 protocol
+    revision; new deployments should use this rather than ``/sse``.
+    """
+    import uvicorn
+
+    app = server.streamable_http_app(
+        streamable_http_path=STREAMABLE_HTTP_PATH,
+        host=host,
+    )
+    config = uvicorn.Config(app, host=host, port=port, log_config=None)
+    await uvicorn.Server(config).serve()
+
+
+async def serve(
+    instance_url: str = DEFAULT_INSTANCE_URL,
+    timeout: int = 30,
+    transport: str = DEFAULT_TRANSPORT,
+    host: str = DEFAULT_HOST,
+    port: int = DEFAULT_PORT,
+) -> None:
+    """Start SearXNG MCP server on the requested transport."""
     from searxng.adapters import HttpSearchAdapter
+
+    if transport not in VALID_TRANSPORTS:
+        valid = ", ".join(sorted(VALID_TRANSPORTS))
+        raise ValueError(f"Transport must be one of: {valid}")
 
     search_adapter = HttpSearchAdapter(instance_url=instance_url, timeout=timeout)
     server = build_server(SearchUseCase(search_port=search_adapter))
 
     try:
-        async with stdio_server() as (read_stream, write_stream):
-            await server.run(
-                read_stream,
-                write_stream,
-                server.create_initialization_options(),
-            )
+        if transport == "http":
+            await _serve_http(server, host=host, port=port)
+        else:
+            await _serve_stdio(server)
     finally:
         search_adapter.close()
