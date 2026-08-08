@@ -1,5 +1,6 @@
 """Infrastructure adapters - HTTP client and external integrations."""
 
+import asyncio
 import logging
 from dataclasses import dataclass
 from typing import Any
@@ -52,17 +53,23 @@ class HttpSearchAdapter:
         self._timeout = SearchTimeout(seconds=timeout)
         self._logger = logging.getLogger(__name__)
 
-    def search(
+    async def search(
         self, query: SearchQuery, parameters: SearchParameters
     ) -> SearchResultCollection:
-        """Execute search and return results."""
+        """Execute search and return results.
+
+        ``requests`` is blocking, so the call is offloaded to a worker thread to
+        keep the server's event loop responsive to concurrent requests.
+        """
         self._logger.info(f"Start search: {query.text}")
 
         request_params = self._build_request_params(query, parameters)
         search_url = f"{self._instance_url.value}/search"
 
         try:
-            raw_results = self._execute_request(search_url, request_params)
+            raw_results = await asyncio.to_thread(
+                self._execute_request, search_url, request_params
+            )
             return self._map_to_domain(query, raw_results, parameters.max_results)
         except requests.RequestException as e:
             self._logger.error(f"Request error: {e}")

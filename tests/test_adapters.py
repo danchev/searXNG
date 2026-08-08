@@ -65,7 +65,7 @@ class TestHttpSearchAdapter:
         assert adapter._timeout.seconds == 60
 
     @patch("searxng.adapters.requests.get")
-    def test_successful_search(self, mock_get: Mock) -> None:
+    async def test_successful_search(self, mock_get: Mock) -> None:
         """Test successful search operation."""
         mock_response = Mock()
         mock_response.json.return_value = {
@@ -89,7 +89,7 @@ class TestHttpSearchAdapter:
             time_range=None,
         )
 
-        result = adapter.search(query, parameters)
+        result = await adapter.search(query, parameters)
 
         assert result.query.text == "test query"
         assert len(result.results) == 1
@@ -98,7 +98,7 @@ class TestHttpSearchAdapter:
         assert result.results[0].content.value == "Test content"
 
     @patch("searxng.adapters.requests.get")
-    def test_search_with_time_range(self, mock_get: Mock) -> None:
+    async def test_search_with_time_range(self, mock_get: Mock) -> None:
         """Test search with time range parameter."""
         mock_response = Mock()
         mock_response.json.return_value = {"results": []}
@@ -114,7 +114,7 @@ class TestHttpSearchAdapter:
             time_range="week",
         )
 
-        result = adapter.search(query, parameters)
+        result = await adapter.search(query, parameters)
 
         mock_get.assert_called_once()
         call_args = mock_get.call_args
@@ -122,7 +122,7 @@ class TestHttpSearchAdapter:
         assert result.query.text == "recent news"
 
     @patch("searxng.adapters.requests.get")
-    def test_search_respects_max_results(self, mock_get: Mock) -> None:
+    async def test_search_respects_max_results(self, mock_get: Mock) -> None:
         """Test that search respects max_results parameter."""
         mock_response = Mock()
         mock_response.json.return_value = {
@@ -147,12 +147,12 @@ class TestHttpSearchAdapter:
             time_range=None,
         )
 
-        result = adapter.search(query, parameters)
+        result = await adapter.search(query, parameters)
 
         assert len(result.results) == 3
 
     @patch("searxng.adapters.requests.get")
-    def test_search_handles_empty_results(self, mock_get: Mock) -> None:
+    async def test_search_handles_empty_results(self, mock_get: Mock) -> None:
         """Test handling of empty search results."""
         mock_response = Mock()
         mock_response.json.return_value = {"results": []}
@@ -168,12 +168,12 @@ class TestHttpSearchAdapter:
             time_range=None,
         )
 
-        result = adapter.search(query, parameters)
+        result = await adapter.search(query, parameters)
 
         assert len(result.results) == 0
 
     @patch("searxng.adapters.requests.get")
-    def test_search_handles_request_exception(self, mock_get: Mock) -> None:
+    async def test_search_handles_request_exception(self, mock_get: Mock) -> None:
         """Test handling of request exceptions."""
         mock_get.side_effect = requests.RequestException("Network error")
 
@@ -187,12 +187,12 @@ class TestHttpSearchAdapter:
             time_range=None,
         )
 
-        result = adapter.search(query, parameters)
+        result = await adapter.search(query, parameters)
 
         assert len(result.results) == 0
 
     @patch("searxng.adapters.requests.get")
-    def test_search_handles_missing_fields(self, mock_get: Mock) -> None:
+    async def test_search_handles_missing_fields(self, mock_get: Mock) -> None:
         """Test handling of results with missing fields."""
         mock_response = Mock()
         mock_response.json.return_value = {
@@ -214,7 +214,7 @@ class TestHttpSearchAdapter:
             time_range=None,
         )
 
-        result = adapter.search(query, parameters)
+        result = await adapter.search(query, parameters)
 
         assert len(result.results) == 3
         assert result.results[0].title.value == "Only Title"
@@ -222,7 +222,7 @@ class TestHttpSearchAdapter:
         assert result.results[1].url.value == "https://only-url.com"
 
     @patch("searxng.adapters.requests.get")
-    def test_build_request_params_with_all_options(self, mock_get: Mock) -> None:
+    async def test_build_request_params_with_all_options(self, mock_get: Mock) -> None:
         """Test building request parameters with all options."""
         mock_response = Mock()
         mock_response.json.return_value = {"results": []}
@@ -238,7 +238,7 @@ class TestHttpSearchAdapter:
             time_range="month",
         )
 
-        adapter.search(query, parameters)
+        await adapter.search(query, parameters)
 
         call_args = mock_get.call_args
         params = call_args[1]["params"]
@@ -253,7 +253,9 @@ class TestHttpSearchAdapter:
         assert params["pageno"] == 1
 
     @patch("searxng.adapters.requests.get")
-    def test_build_request_params_without_optional_fields(self, mock_get: Mock) -> None:
+    async def test_build_request_params_without_optional_fields(
+        self, mock_get: Mock
+    ) -> None:
         """Test building request parameters without optional fields."""
         mock_response = Mock()
         mock_response.json.return_value = {"results": []}
@@ -269,7 +271,7 @@ class TestHttpSearchAdapter:
             time_range=None,
         )
 
-        adapter.search(query, parameters)
+        await adapter.search(query, parameters)
 
         call_args = mock_get.call_args
         params = call_args[1]["params"]
@@ -279,7 +281,7 @@ class TestHttpSearchAdapter:
         assert "time_range" not in params
 
     @patch("searxng.adapters.requests.get")
-    def test_execute_request_uses_correct_timeout(self, mock_get: Mock) -> None:
+    async def test_execute_request_uses_correct_timeout(self, mock_get: Mock) -> None:
         """Test that request uses correct timeout value."""
         mock_response = Mock()
         mock_response.json.return_value = {"results": []}
@@ -295,7 +297,7 @@ class TestHttpSearchAdapter:
             time_range=None,
         )
 
-        adapter.search(query, parameters)
+        await adapter.search(query, parameters)
 
         call_args = mock_get.call_args
         assert call_args[1]["timeout"] == 45

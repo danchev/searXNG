@@ -99,7 +99,7 @@ class SearchParameters:
 class SearchPort(Protocol):
     """Port for search functionality (outbound)."""
 
-    def search(
+    async def search(
         self, query: SearchQuery, parameters: SearchParameters
     ) -> SearchResultCollection:
         """Execute search and return results."""
