@@ -20,7 +20,7 @@ jobs:
           enable-cache: true
           version: latest
       - name: Install dependencies
-        run: uv sync --frozen --all-extras --python 3.10
+        run: uv sync --frozen --all-extras --python 3.12
 
       - uses: pre-commit/action@v3.0.1
         with:
@@ -32,10 +32,10 @@ jobs:
     name: test (${{ matrix.python-version }}, ${{ matrix.dep-resolution.name }}, ${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     timeout-minutes: 10
-    continue-on-error: true
     strategy:
+      fail-fast: false
       matrix:
-        python-version: ["3.12", "3.13", "3.14"]
+        python-version: ["3.11", "3.12", "3.13", "3.14"]
         dep-resolution:
           - name: lowest-direct
             install-flags: "--resolution lowest-direct"
@@ -44,7 +44,7 @@ jobs:
         os: [ubuntu-latest, windows-latest]
 
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
 
       - name: Install uv
         uses: astral-sh/setup-uv@v7
