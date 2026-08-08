@@ -81,6 +81,10 @@ class SearchResultCollection:
         )
 
 
+MAX_RESULTS_LIMIT = 100
+VALID_TIME_RANGES = frozenset({"day", "week", "month", "year"})
+
+
 @dataclass(frozen=True)
 class SearchParameters:
     """Value object encapsulating search parameters."""
@@ -92,8 +96,22 @@ class SearchParameters:
     time_range: str | None
 
     def __post_init__(self) -> None:
+        # bool is a subclass of int, but is never a valid result count. Raised
+        # as ValueError, not TypeError, so it stays on the same exception type
+        # as every other SearchParameters validation failure.
+        if isinstance(self.max_results, bool) or not isinstance(self.max_results, int):
+            raise ValueError("Max results must be an integer")  # noqa: TRY004
         if self.max_results <= 0:
             raise ValueError("Max results must be positive")
+        if self.max_results > MAX_RESULTS_LIMIT:
+            raise ValueError(f"Max results cannot exceed {MAX_RESULTS_LIMIT}")
+        if self.time_range is not None and self.time_range not in VALID_TIME_RANGES:
+            valid = ", ".join(sorted(VALID_TIME_RANGES))
+            raise ValueError(f"Time range must be one of: {valid}")
+
+
+class SearchError(Exception):
+    """Raised when a search cannot be completed."""
 
 
 class SearchPort(Protocol):

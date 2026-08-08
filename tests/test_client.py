@@ -1,5 +1,7 @@
 """Tests for domain layer (client module)."""
 
+from typing import Any
+
 import pytest
 
 from searxng.client import (
@@ -160,6 +162,71 @@ class TestSearchParameters:
                 language="en",
                 max_results=-5,
                 time_range=None,
+            )
+
+    def test_accepts_max_results_at_upper_limit(self) -> None:
+        """The documented upper bound (100) is inclusive."""
+        params = SearchParameters(
+            categories=(), engines=(), language="en", max_results=100, time_range=None
+        )
+        assert params.max_results == 100
+
+    def test_rejects_max_results_above_limit(self) -> None:
+        """One past the upper bound is rejected."""
+        with pytest.raises(ValueError, match="cannot exceed 100"):
+            SearchParameters(
+                categories=(),
+                engines=(),
+                language="en",
+                max_results=101,
+                time_range=None,
+            )
+
+    @pytest.mark.parametrize("value", [True, False])
+    def test_rejects_bool_max_results(self, value: bool) -> None:
+        """bool is an int subclass but is never a valid result count."""
+        with pytest.raises(ValueError, match="must be an integer"):
+            SearchParameters(
+                categories=(),
+                engines=(),
+                language="en",
+                max_results=value,
+                time_range=None,
+            )
+
+    def test_rejects_float_max_results(self) -> None:
+        """A non-integral numeric type is rejected, not silently truncated."""
+        bad_max_results: Any = 5.5
+        with pytest.raises(ValueError, match="must be an integer"):
+            SearchParameters(
+                categories=(),
+                engines=(),
+                language="en",
+                max_results=bad_max_results,
+                time_range=None,
+            )
+
+    @pytest.mark.parametrize("value", ["day", "week", "month", "year"])
+    def test_accepts_valid_time_ranges(self, value: str) -> None:
+        """Every documented time range value is accepted."""
+        params = SearchParameters(
+            categories=(),
+            engines=(),
+            language="en",
+            max_results=10,
+            time_range=value,
+        )
+        assert params.time_range == value
+
+    def test_rejects_invalid_time_range(self) -> None:
+        """An unrecognised time range is rejected up front."""
+        with pytest.raises(ValueError, match="Time range must be one of"):
+            SearchParameters(
+                categories=(),
+                engines=(),
+                language="en",
+                max_results=10,
+                time_range="decade",
             )
 
 
