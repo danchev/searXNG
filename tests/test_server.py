@@ -427,9 +427,11 @@ class TestServeFunction:
             mock_stdio.return_value.__aexit__ = AsyncMock(return_value=False)
             mock_build.return_value.run = AsyncMock()
 
-            await serve(instance_url="https://test.searx")
+            await serve(instance_url="https://test.searx", timeout=45)
 
-        mock_adapter_cls.assert_called_once_with(instance_url="https://test.searx")
+        mock_adapter_cls.assert_called_once_with(
+            instance_url="https://test.searx", timeout=45
+        )
         mock_build.return_value.run.assert_awaited_once()
         mock_adapter.close.assert_called_once()
 

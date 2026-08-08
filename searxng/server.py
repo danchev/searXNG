@@ -36,10 +36,11 @@ DEFAULT_CATEGORIES = ("general",)
 DEFAULT_ENGINES = ("google", "bing", "duckduckgo")
 DEFAULT_LANGUAGE = "en"
 DEFAULT_MAX_RESULTS = 10
-
-logger = logging.getLogger(__name__)
+DEFAULT_INSTANCE_URL = "https://searx.party"
 
 SEARCH_RESOURCE_URI = "searxng://web/search"
+
+logger = logging.getLogger(__name__)
 
 
 class SearchUseCase:
@@ -323,11 +324,11 @@ def build_server(search_use_case: SearchUseCase) -> Server:
     )
 
 
-async def serve(instance_url: str = "https://searx.party") -> None:
+async def serve(instance_url: str = DEFAULT_INSTANCE_URL, timeout: int = 30) -> None:
     """Start SearXNG MCP server."""
     from searxng.adapters import HttpSearchAdapter
 
-    search_adapter = HttpSearchAdapter(instance_url=instance_url)
+    search_adapter = HttpSearchAdapter(instance_url=instance_url, timeout=timeout)
     server = build_server(SearchUseCase(search_port=search_adapter))
 
     try:

@@ -2,58 +2,113 @@
 
 from unittest.mock import Mock, patch
 
+import pytest
+
+from searxng import main
+from searxng.server import DEFAULT_INSTANCE_URL
+
+
+def _run_main(argv: list[str]) -> Mock:
+    """Run main() with the given argv, capturing the serve() coroutine args."""
+    with (
+        patch("sys.argv", ["searxng", *argv]),
+        patch("searxng.asyncio.run") as mock_run,
+        patch("searxng.serve", new_callable=Mock) as mock_serve,
+    ):
+        main()
+        mock_run.assert_called_once()
+    return mock_serve
+
 
 class TestMain:
-    """Test main function."""
+    """Test the command line entry point."""
 
-    @patch("searxng.__init__.serve")
-    @patch("searxng.__init__.argparse.ArgumentParser")
-    @patch("searxng.__init__.asyncio.run")
-    def test_main_with_default_args(
-        self, mock_asyncio_run: Mock, mock_argparser: Mock, mock_serve: Mock
-    ) -> None:
-        """Test main function with default arguments."""
-        mock_parser = Mock()
-        mock_argparser.return_value = mock_parser
-        mock_args = Mock()
-        mock_args.instance_url = "https://searx.party"
-        mock_parser.parse_args.return_value = mock_args
+    def test_uses_defaults_when_no_args_given(self) -> None:
+        """Default instance URL and timeout are passed through to serve()."""
+        mock_serve = _run_main([])
 
-        from searxng import main
+        mock_serve.assert_called_once_with(
+            instance_url=DEFAULT_INSTANCE_URL, timeout=30
+        )
 
-        main()
+    def test_accepts_custom_instance_url(self) -> None:
+        """A custom --instance-url reaches serve()."""
+        mock_serve = _run_main(["--instance-url", "https://custom.searx"])
 
-        mock_argparser.assert_called_once()
-        mock_parser.add_argument.assert_called()
-        mock_asyncio_run.assert_called_once()
+        mock_serve.assert_called_once_with(
+            instance_url="https://custom.searx", timeout=30
+        )
 
-    @patch("searxng.__init__.serve")
-    @patch("searxng.__init__.argparse.ArgumentParser")
-    @patch("searxng.__init__.asyncio.run")
-    def test_main_with_custom_url(
-        self, mock_asyncio_run: Mock, mock_argparser: Mock, mock_serve: Mock
-    ) -> None:
-        """Test main function with custom instance URL."""
-        mock_parser = Mock()
-        mock_argparser.return_value = mock_parser
-        mock_args = Mock()
-        mock_args.instance_url = "https://custom.searx"
-        mock_parser.parse_args.return_value = mock_args
+    def test_accepts_custom_timeout(self) -> None:
+        """A custom --timeout reaches serve()."""
+        mock_serve = _run_main(["--timeout", "5"])
 
-        from searxng import main
+        mock_serve.assert_called_once_with(instance_url=DEFAULT_INSTANCE_URL, timeout=5)
 
-        main()
+    def test_rejects_non_positive_timeout(self) -> None:
+        """A non-positive timeout exits with argparse's usage error."""
+        with (
+            patch("sys.argv", ["searxng", "--timeout", "0"]),
+            patch("searxng.asyncio.run"),
+            pytest.raises(SystemExit) as exc_info,
+        ):
+            main()
 
-        mock_asyncio_run.assert_called_once()
+        assert exc_info.value.code == 2
 
-    @patch("sys.argv", ["searxng", "--instance-url", "https://test.com"])
-    @patch("searxng.__init__.asyncio.run")
-    @patch("searxng.__init__.serve")
-    def test_main_as_script(self, mock_serve: Mock, mock_asyncio_run: Mock) -> None:
-        """Test main function when called as a script."""
-        import searxng
+    def test_rejects_invalid_log_level(self) -> None:
+        """An unknown --log-level is rejected by argparse."""
+        with (
+            patch("sys.argv", ["searxng", "--log-level", "LOUD"]),
+            patch("searxng.asyncio.run"),
+            pytest.raises(SystemExit) as exc_info,
+        ):
+            main()
 
-        # Call main directly
-        if hasattr(searxng, "main"):
-            searxng.main()
-            mock_asyncio_run.assert_called()
+        assert exc_info.value.code == 2
+
+    def test_configures_logging_to_stderr(self) -> None:
+        """Logs must not go to stdout, which carries the MCP protocol."""
+        with (
+            patch("sys.argv", ["searxng", "--log-level", "DEBUG"]),
+            patch("searxng.asyncio.run"),
+            patch("searxng.serve", new_callable=Mock),
+            patch("searxng.logging.basicConfig") as mock_basic_config,
+        ):
+            main()
+
+        kwargs = mock_basic_config.call_args.kwargs
+        assert kwargs["level"] == "DEBUG"
+        assert kwargs["stream"] is not None
+
+    def test_keyboard_interrupt_exits_cleanly(self) -> None:
+        """Ctrl-C shuts the server down without a traceback."""
+        with (
+            patch("sys.argv", ["searxng"]),
+            patch("searxng.asyncio.run", side_effect=KeyboardInterrupt),
+            patch("searxng.serve", new_callable=Mock),
+        ):
+            main()  # must not raise
+
+    def test_invalid_instance_url_exits_cleanly(self) -> None:
+        """A malformed --instance-url is reported as a usage error, not a traceback.
+
+        InstanceUrl validation happens lazily inside serve(), so a bad URL
+        surfaces here as a ValueError raised from asyncio.run(); main() must
+        translate that into argparse's clean one-line error instead of letting
+        it propagate as an unhandled exception.
+        """
+        with (
+            patch("sys.argv", ["searxng", "--instance-url", "not-a-url"]),
+            patch(
+                "searxng.asyncio.run",
+                side_effect=ValueError(
+                    "Instance URL must be an absolute http(s) URL, got: not-a-url"
+                ),
+            ),
+            patch("searxng.serve", new_callable=Mock),
+            pytest.raises(SystemExit) as exc_info,
+        ):
+            main()
+
+        assert exc_info.value.code == 2
