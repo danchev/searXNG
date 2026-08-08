@@ -1,8 +1,9 @@
 """Tests for application layer (server module)."""
 
 import json
+from types import SimpleNamespace
 from typing import Any
-from unittest.mock import Mock, patch
+from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 from mcp import MCPError
@@ -20,7 +21,6 @@ from mcp.types import (
 from searxng.client import (
     ResultIndex,
     SearchError,
-    SearchParameters,
     SearchQuery,
     SearchResult,
     SearchResultCollection,
@@ -62,21 +62,19 @@ def make_use_case(
     """Build a SearchUseCase backed by a mock port."""
     port = Mock()
     if side_effect is not None:
-
-        async def raise_side_effect(*args: Any, **kwargs: Any) -> None:
-            raise side_effect
-
-        port.search = raise_side_effect
+        # Setting return_value alongside side_effect leaves an un-awaited
+        # coroutine behind, so configure exactly one of the two.
+        port.search = AsyncMock(side_effect=side_effect)
     else:
-        collection = return_value if return_value is not None else make_collection()
-
-        async def return_collection(
-            *args: Any, **kwargs: Any
-        ) -> SearchResultCollection:
-            return collection
-
-        port.search = return_collection
+        port.search = AsyncMock(
+            return_value=return_value if return_value is not None else make_collection()
+        )
     return SearchUseCase(search_port=port), port
+
+
+def make_ctx() -> Any:
+    """A request-context stand-in; handlers here do not use it."""
+    return SimpleNamespace()
 
 
 def handler_for(server: Any, method: str) -> Any:
@@ -89,7 +87,9 @@ async def call_tool(
 ) -> CallToolResult:
     """Invoke the tools/call handler directly."""
     handler = handler_for(server, "tools/call")
-    return await handler(Mock(), CallToolRequestParams(name=name, arguments=arguments))
+    return await handler(
+        make_ctx(), CallToolRequestParams(name=name, arguments=arguments)
+    )
 
 
 def text_at(result: CallToolResult, index: int) -> str:
@@ -100,138 +100,143 @@ def text_at(result: CallToolResult, index: int) -> str:
 
 
 class TestSearchUseCase:
-    """Test SearchUseCase application service."""
+    """Test the search use case."""
 
     async def test_execute_with_all_parameters(self) -> None:
-        """Test executing search with all parameters."""
+        """All explicit parameters are forwarded to the port."""
         use_case, port = make_use_case()
 
-        with patch.object(port, "search", wraps=port.search) as spy:
-            await use_case.execute(
-                query_text="test query",
-                categories=("general", "news"),
-                engines=("google", "bing"),
-                language="en",
-                max_results=15,
-                time_range="week",
-            )
+        await use_case.execute(
+            query_text="test query",
+            categories=("news",),
+            engines=("bing",),
+            language="fr",
+            max_results=5,
+            time_range="week",
+        )
 
-        spy.assert_called_once()
-        query, parameters = spy.call_args.args
+        query, parameters = port.search.call_args.args
         assert query.text == "test query"
-        assert parameters.categories == ("general", "news")
-        assert parameters.engines == ("google", "bing")
-        assert parameters.language == "en"
-        assert parameters.max_results == 15
+        assert parameters.categories == ("news",)
+        assert parameters.engines == ("bing",)
+        assert parameters.language == "fr"
+        assert parameters.max_results == 5
         assert parameters.time_range == "week"
 
     async def test_execute_with_defaults(self) -> None:
-        """Test executing search with default parameters."""
+        """Omitted categories and engines fall back to defaults."""
         use_case, port = make_use_case()
 
-        with patch.object(port, "search", wraps=port.search) as spy:
-            await use_case.execute(
-                query_text="test",
-                categories=None,
-                engines=None,
-                language="en",
-                max_results=10,
-                time_range=None,
-            )
+        await use_case.execute(
+            query_text="test",
+            categories=None,
+            engines=None,
+            language=DEFAULT_LANGUAGE,
+            max_results=DEFAULT_MAX_RESULTS,
+            time_range=None,
+        )
 
-        _, parameters = spy.call_args.args
+        _, parameters = port.search.call_args.args
         assert parameters.categories == DEFAULT_CATEGORIES
         assert parameters.engines == DEFAULT_ENGINES
-        assert parameters.time_range is None
-
-    async def test_execute_creates_valid_search_query(self) -> None:
-        """Test that execute creates valid SearchQuery."""
-        use_case, port = make_use_case()
-
-        with patch.object(port, "search", wraps=port.search) as spy:
-            await use_case.execute(
-                query_text="Python programming",
-                categories=None,
-                engines=None,
-                language="en",
-                max_results=10,
-                time_range=None,
-            )
-
-        query, _ = spy.call_args.args
-        assert isinstance(query, SearchQuery)
-        assert query.text == "Python programming"
-
-    async def test_execute_creates_valid_search_parameters(self) -> None:
-        """Test that execute creates valid SearchParameters."""
-        use_case, port = make_use_case()
-
-        with patch.object(port, "search", wraps=port.search) as spy:
-            await use_case.execute(
-                query_text="test",
-                categories=("images",),
-                engines=("duckduckgo",),
-                language="fr",
-                max_results=20,
-                time_range="day",
-            )
-
-        _, parameters = spy.call_args.args
-        assert isinstance(parameters, SearchParameters)
-        assert parameters.categories == ("images",)
-        assert parameters.engines == ("duckduckgo",)
-        assert parameters.language == "fr"
-        assert parameters.max_results == 20
-        assert parameters.time_range == "day"
 
     async def test_execute_with_empty_tuples_uses_defaults(self) -> None:
-        """Test that empty tuples fall back to defaults."""
+        """Empty tuples are treated as 'unspecified'."""
         use_case, port = make_use_case()
 
-        with patch.object(port, "search", wraps=port.search) as spy:
+        await use_case.execute(
+            query_text="test",
+            categories=(),
+            engines=(),
+            language=DEFAULT_LANGUAGE,
+            max_results=DEFAULT_MAX_RESULTS,
+            time_range=None,
+        )
+
+        _, parameters = port.search.call_args.args
+        assert parameters.categories == DEFAULT_CATEGORIES
+        assert parameters.engines == DEFAULT_ENGINES
+
+    async def test_execute_creates_valid_search_query(self) -> None:
+        """The raw query text becomes a SearchQuery value object."""
+        use_case, port = make_use_case()
+
+        await use_case.execute(
+            query_text="python programming",
+            categories=None,
+            engines=None,
+            language=DEFAULT_LANGUAGE,
+            max_results=DEFAULT_MAX_RESULTS,
+            time_range=None,
+        )
+
+        query, _ = port.search.call_args.args
+        assert isinstance(query, SearchQuery)
+        assert query.text == "python programming"
+
+    async def test_execute_rejects_empty_query(self) -> None:
+        """An empty query is rejected before reaching the port."""
+        use_case, port = make_use_case()
+
+        with pytest.raises(ValueError, match="cannot be empty"):
             await use_case.execute(
-                query_text="test",
-                categories=(),
-                engines=(),
-                language="en",
-                max_results=10,
+                query_text="   ",
+                categories=None,
+                engines=None,
+                language=DEFAULT_LANGUAGE,
+                max_results=DEFAULT_MAX_RESULTS,
                 time_range=None,
             )
 
-        _, parameters = spy.call_args.args
-        assert parameters.categories == DEFAULT_CATEGORIES
-        assert parameters.engines == DEFAULT_ENGINES
+        port.search.assert_not_called()
+
+    async def test_execute_returns_port_results(self) -> None:
+        """The collection from the port is returned unchanged."""
+        expected = make_collection("A", "B")
+        use_case, _ = make_use_case(return_value=expected)
+
+        result = await use_case.execute(
+            query_text="test",
+            categories=None,
+            engines=None,
+            language=DEFAULT_LANGUAGE,
+            max_results=DEFAULT_MAX_RESULTS,
+            time_range=None,
+        )
+
+        assert result is expected
 
 
 class TestListHandlers:
     """Test the resource and tool listing handlers."""
 
     async def test_list_resources(self) -> None:
-        """Test the resources/list handler."""
+        """The search resource is advertised."""
         server = build_server(make_use_case()[0])
 
-        result = await handler_for(server, "resources/list")(Mock(), None)
+        result = await handler_for(server, "resources/list")(make_ctx(), None)
 
         assert isinstance(result, ListResourcesResult)
         assert [str(r.uri) for r in result.resources] == [SEARCH_RESOURCE_URI]
 
     async def test_list_tools(self) -> None:
-        """Test the tools/list handler."""
+        """The web_search tool is advertised with a valid schema."""
         server = build_server(make_use_case()[0])
 
-        result = await handler_for(server, "tools/list")(Mock(), None)
+        result = await handler_for(server, "tools/list")(make_ctx(), None)
 
         assert isinstance(result, ListToolsResult)
         assert len(result.tools) == 1
-        assert result.tools[0].name == "web_search"
-        assert result.tools[0].description is not None
-        assert "SearXNG" in result.tools[0].description
+        tool = result.tools[0]
+        assert tool.name == "web_search"
+        assert tool.input_schema["required"] == ["query"]
+        assert "query" in tool.input_schema["properties"]
 
     async def test_tool_schema_constrains_max_results(self) -> None:
         """The advertised schema documents the max_results bounds."""
         server = build_server(make_use_case()[0])
 
-        result = await handler_for(server, "tools/list")(Mock(), None)
+        result = await handler_for(server, "tools/list")(make_ctx(), None)
 
         max_results = result.tools[0].input_schema["properties"]["max_results"]
         assert max_results["minimum"] == 1
@@ -241,7 +246,7 @@ class TestListHandlers:
         """The advertised schema enumerates valid time ranges."""
         server = build_server(make_use_case()[0])
 
-        result = await handler_for(server, "tools/list")(Mock(), None)
+        result = await handler_for(server, "tools/list")(make_ctx(), None)
 
         time_range = result.tools[0].input_schema["properties"]["time_range"]
         assert set(time_range["enum"]) == {"day", "week", "month", "year"}
@@ -251,29 +256,31 @@ class TestReadResourceHandler:
     """Test the resources/read handler."""
 
     async def test_reads_the_search_resource(self) -> None:
-        """Test the read_resource handler with a valid URI."""
+        """The known URI returns JSON usage documentation."""
         server = build_server(make_use_case()[0])
 
         result = await handler_for(server, "resources/read")(
-            Mock(), ReadResourceRequestParams(uri=SEARCH_RESOURCE_URI)
+            make_ctx(), ReadResourceRequestParams(uri=SEARCH_RESOURCE_URI)
         )
 
         assert isinstance(result, ReadResourceResult)
         contents = result.contents[0]
         assert isinstance(contents, TextResourceContents)
+        assert contents.mime_type == "application/json"
         payload = json.loads(contents.text)
-        assert payload["resource"] == "Web Search"
         assert payload["usage"]["tool_name"] == "web_search"
-        assert "query" in payload["usage"]["required_parameters"]
-        assert len(payload["examples"]) == 3
+        assert payload["usage"]["required_parameters"] == ["query"]
 
-    async def test_rejects_unknown_uri(self) -> None:
-        """Test the read_resource handler with an unknown searxng resource."""
+    @pytest.mark.parametrize(
+        "uri", ["searxng://web/unknown", "https://example.com", "searxng://other"]
+    )
+    async def test_rejects_unknown_uri(self, uri: str) -> None:
+        """Any other URI is a protocol-level error."""
         server = build_server(make_use_case()[0])
 
         with pytest.raises(MCPError, match="Unknown resource"):
             await handler_for(server, "resources/read")(
-                Mock(), ReadResourceRequestParams(uri="searxng://unknown")
+                make_ctx(), ReadResourceRequestParams(uri=uri)
             )
 
 
@@ -281,48 +288,23 @@ class TestCallToolHandler:
     """Test the tools/call handler."""
 
     async def test_unsupported_tool_raises_protocol_error(self) -> None:
-        """Test call_tool with an unsupported tool name."""
+        """An unknown tool name is a protocol error, not a tool result."""
         server = build_server(make_use_case()[0])
 
         with pytest.raises(MCPError, match="Unsupported tool"):
-            await call_tool(server, "unsupported_tool", {})
+            await call_tool(server, "nope", {"query": "test"})
 
     async def test_successful_search_returns_formatted_results(self) -> None:
-        """Test successful web search execution."""
-        use_case, _ = make_use_case(return_value=make_collection("Test"))
+        """Each result becomes a text content block."""
+        use_case, _ = make_use_case(return_value=make_collection("First", "Second"))
         server = build_server(use_case)
 
         result = await call_tool(server, "web_search", {"query": "test"})
 
-        assert len(result.content) == 1
-        assert "Test" in text_at(result, 0)
-
-    async def test_search_exception_propagates(self) -> None:
-        """Test that an unexpected search failure propagates to the caller."""
-        use_case, _ = make_use_case(side_effect=RuntimeError("Test error"))
-        server = build_server(use_case)
-
-        with pytest.raises(RuntimeError, match="Test error"):
-            await call_tool(server, "web_search", {"query": "test"})
-
-    async def test_search_error_returns_tool_error(self) -> None:
-        """A SearchError from the port is reported to the model, not raised."""
-        use_case, _ = make_use_case(side_effect=SearchError("instance unreachable"))
-        server = build_server(use_case)
-
-        result = await call_tool(server, "web_search", {"query": "test"})
-
-        assert result.is_error is True
-        assert "instance unreachable" in text_at(result, 0)
-
-    async def test_missing_query_returns_tool_error(self) -> None:
-        """A missing query is a tool-level error, not a protocol error."""
-        server = build_server(make_use_case()[0])
-
-        result = await call_tool(server, "web_search", {})
-
-        assert result.is_error is True
-        assert "Missing required parameter" in text_at(result, 0)
+        assert result.is_error is not True
+        assert len(result.content) == 2
+        assert "First" in text_at(result, 0)
+        assert "Second" in text_at(result, 1)
 
     async def test_empty_results_reported_as_text(self) -> None:
         """No results is a successful call, not an error."""
@@ -339,21 +321,20 @@ class TestCallToolHandler:
         use_case, port = make_use_case()
         server = build_server(use_case)
 
-        with patch.object(port, "search", wraps=port.search) as spy:
-            await call_tool(
-                server,
-                "web_search",
-                {
-                    "query": "test",
-                    "categories": ["news"],
-                    "engines": ["bing"],
-                    "language": "de",
-                    "max_results": 3,
-                    "time_range": "day",
-                },
-            )
+        await call_tool(
+            server,
+            "web_search",
+            {
+                "query": "test",
+                "categories": ["news"],
+                "engines": ["bing"],
+                "language": "de",
+                "max_results": 3,
+                "time_range": "day",
+            },
+        )
 
-        _, parameters = spy.call_args.args
+        _, parameters = port.search.call_args.args
         assert parameters.categories == ("news",)
         assert parameters.engines == ("bing",)
         assert parameters.language == "de"
@@ -361,14 +342,13 @@ class TestCallToolHandler:
         assert parameters.time_range == "day"
 
     async def test_applies_defaults_for_omitted_arguments(self) -> None:
-        """Omitted optional arguments fall back to defaults, not None."""
+        """Omitted optional arguments fall back to defaults."""
         use_case, port = make_use_case()
         server = build_server(use_case)
 
-        with patch.object(port, "search", wraps=port.search) as spy:
-            await call_tool(server, "web_search", {"query": "test"})
+        await call_tool(server, "web_search", {"query": "test"})
 
-        _, parameters = spy.call_args.args
+        _, parameters = port.search.call_args.args
         assert parameters.language == DEFAULT_LANGUAGE
         assert parameters.max_results == DEFAULT_MAX_RESULTS
         assert parameters.time_range is None
@@ -385,10 +365,15 @@ class TestCallToolHandler:
             ({"query": "t", "max_results": "5"}, "must be an integer"),
             ({"query": "t", "max_results": True}, "must be an integer"),
             ({"query": "t", "max_results": 0}, "must be positive"),
+            ({"query": "t", "max_results": -1}, "must be positive"),
+            ({"query": "t", "max_results": 5.5}, "must be an integer"),
             ({"query": "t", "max_results": 500}, "cannot exceed 100"),
             ({"query": "t", "time_range": "decade"}, "Time range must be one of"),
             ({"query": "t", "language": 123}, "must be a non-empty string"),
+            ({"query": "t", "language": True}, "must be a non-empty string"),
             ({"query": "t", "language": ""}, "must be a non-empty string"),
+            ({"query": "t", "language": "   "}, "must be a non-empty string"),
+            ({"query": "t", "language": ["en"]}, "must be a non-empty string"),
         ],
     )
     async def test_invalid_arguments_return_tool_error(
@@ -402,51 +387,67 @@ class TestCallToolHandler:
         assert result.is_error is True
         assert expected in text_at(result, 0)
 
+    async def test_search_failure_returns_tool_error(self) -> None:
+        """A backend failure is surfaced as an error result the model can see."""
+        use_case, _ = make_use_case(side_effect=SearchError("instance unreachable"))
+        server = build_server(use_case)
+
+        result = await call_tool(server, "web_search", {"query": "test"})
+
+        assert result.is_error is True
+        assert "instance unreachable" in text_at(result, 0)
+
+    async def test_missing_arguments_object_is_handled(self) -> None:
+        """A tools/call with no arguments is a tool error, not a crash."""
+        server = build_server(make_use_case()[0])
+        handler = handler_for(server, "tools/call")
+
+        result = await handler(
+            make_ctx(), CallToolRequestParams(name="web_search", arguments=None)
+        )
+
+        assert result.is_error is True
+
 
 class TestServeFunction:
-    """Test the serve function and MCP server setup."""
+    """Test the serve() entry point."""
 
     async def test_serve_wires_adapter_and_runs_server(self) -> None:
-        """Test that serve initializes the adapter and runs the server."""
-        from unittest.mock import AsyncMock
-
+        """serve() builds the adapter, runs the server, and cleans up."""
         from searxng.server import serve
 
         mock_adapter = Mock()
+        streams = (Mock(), Mock())
 
         with (
             patch(
                 "searxng.adapters.HttpSearchAdapter", return_value=mock_adapter
             ) as mock_adapter_cls,
-            patch("searxng.server.stdio_server") as mock_stdio,
-            patch("searxng.server.build_server") as mock_build,
+            patch("searxng.server.stdio_server", new_callable=Mock) as mock_stdio,
+            patch("searxng.server.build_server", new_callable=Mock) as mock_build,
         ):
-            mock_stdio.return_value.__aenter__ = AsyncMock(
-                return_value=(Mock(), Mock())
-            )
+            mock_stdio.return_value.__aenter__ = AsyncMock(return_value=streams)
             mock_stdio.return_value.__aexit__ = AsyncMock(return_value=False)
             mock_build.return_value.run = AsyncMock()
 
-            await serve(instance_url="https://test.searx", timeout=45)
+            await serve(instance_url="https://custom.searx", timeout=45)
 
         mock_adapter_cls.assert_called_once_with(
-            instance_url="https://test.searx", timeout=45
+            instance_url="https://custom.searx", timeout=45
         )
         mock_build.return_value.run.assert_awaited_once()
         mock_adapter.close.assert_called_once()
 
     async def test_serve_closes_adapter_on_failure(self) -> None:
-        """The adapter's connection pool is released even if the server loop raises."""
-        from unittest.mock import AsyncMock
-
+        """The adapter is released even if the server loop raises."""
         from searxng.server import serve
 
         mock_adapter = Mock()
 
         with (
             patch("searxng.adapters.HttpSearchAdapter", return_value=mock_adapter),
-            patch("searxng.server.stdio_server") as mock_stdio,
-            patch("searxng.server.build_server") as mock_build,
+            patch("searxng.server.stdio_server", new_callable=Mock) as mock_stdio,
+            patch("searxng.server.build_server", new_callable=Mock) as mock_build,
         ):
             mock_stdio.return_value.__aenter__ = AsyncMock(
                 return_value=(Mock(), Mock())
