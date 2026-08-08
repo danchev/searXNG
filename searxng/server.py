@@ -23,6 +23,8 @@ from mcp.types import (
 )
 
 from searxng.client import (
+    MAX_RESULTS_LIMIT,
+    VALID_TIME_RANGES,
     SearchError,
     SearchParameters,
     SearchPort,
@@ -90,6 +92,7 @@ WEB_SEARCH_TOOL = Tool(
             "query": {
                 "type": "string",
                 "description": "Search query string",
+                "minLength": 1,
             },
             "categories": {
                 "type": "array",
@@ -111,13 +114,17 @@ WEB_SEARCH_TOOL = Tool(
                     f"Maximum number of results to return "
                     f"(default {DEFAULT_MAX_RESULTS})"
                 ),
+                "minimum": 1,
+                "maximum": MAX_RESULTS_LIMIT,
             },
             "time_range": {
                 "type": "string",
-                "description": "Time range filter ('day', 'week', 'month', 'year')",
+                "description": "Time range filter",
+                "enum": sorted(VALID_TIME_RANGES),
             },
         },
         "required": ["query"],
+        "additionalProperties": False,
     },
 )
 
@@ -161,12 +168,12 @@ RESOURCE_INFO: dict[str, Any] = {
                 "type": "integer",
                 "description": "Maximum number of results",
                 "default": DEFAULT_MAX_RESULTS,
-                "range": "1-100",
+                "range": f"1-{MAX_RESULTS_LIMIT}",
             },
             "time_range": {
                 "type": "string",
                 "description": "Filter results by time",
-                "options": ["day", "week", "month", "year"],
+                "options": sorted(VALID_TIME_RANGES),
             },
         },
     },
@@ -190,9 +197,51 @@ RESOURCE_INFO: dict[str, Any] = {
 }
 
 
+def _coerce_str_tuple(value: Any, field: str) -> tuple[str, ...] | None:
+    """Validate an optional list-of-strings argument."""
+    if value is None:
+        return None
+    if not isinstance(value, (list, tuple)) or not all(
+        isinstance(item, str) for item in value
+    ):
+        raise ValueError(f"'{field}' must be an array of strings")
+    return tuple(value) or None
+
+
+def _coerce_language(value: Any) -> str:
+    """Validate the optional language argument."""
+    if value is None:
+        return DEFAULT_LANGUAGE
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError("'language' must be a non-empty string")
+    return value
+
+
+def _coerce_max_results(value: Any) -> int:
+    """Validate the optional max_results argument."""
+    if value is None:
+        return DEFAULT_MAX_RESULTS
+    # bool is a subclass of int, but is never a valid result count.
+    if isinstance(value, bool) or not isinstance(value, int):
+        # ValueError keeps argument validation on one error path with the
+        # domain's own checks, which the tool handler reports back to the model.
+        raise ValueError("'max_results' must be an integer")  # noqa: TRY004
+    return value
+
+
 def _to_tool_result(results: SearchResultCollection) -> CallToolResult:
     """Render a result collection as an MCP tool result."""
     formatted = results.format_as_text()
+    if not formatted:
+        return CallToolResult(
+            content=[
+                TextContent(
+                    type="text",
+                    text=f"No results found for {results.query.text!r}.",
+                )
+            ]
+        )
+
     return CallToolResult(
         content=[TextContent(type="text", text=text) for text in formatted]
     )
@@ -235,18 +284,15 @@ def build_server(search_use_case: SearchUseCase) -> Server:
         """Execute web search with provided arguments."""
         try:
             query_text = arguments.get("query")
-            if not query_text:
+            if not isinstance(query_text, str) or not query_text.strip():
                 raise ValueError("Missing required parameter: query")
-
-            categories_list = arguments.get("categories")
-            engines_list = arguments.get("engines")
 
             results = await search_use_case.execute(
                 query_text=query_text,
-                categories=tuple(categories_list) if categories_list else None,
-                engines=tuple(engines_list) if engines_list else None,
-                language=arguments.get("language", DEFAULT_LANGUAGE),
-                max_results=arguments.get("max_results", DEFAULT_MAX_RESULTS),
+                categories=_coerce_str_tuple(arguments.get("categories"), "categories"),
+                engines=_coerce_str_tuple(arguments.get("engines"), "engines"),
+                language=_coerce_language(arguments.get("language")),
+                max_results=_coerce_max_results(arguments.get("max_results")),
                 time_range=arguments.get("time_range"),
             )
         except (ValueError, SearchError) as e:

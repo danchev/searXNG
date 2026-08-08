@@ -31,6 +31,8 @@ from searxng.client import (
 from searxng.server import (
     DEFAULT_CATEGORIES,
     DEFAULT_ENGINES,
+    DEFAULT_LANGUAGE,
+    DEFAULT_MAX_RESULTS,
     SEARCH_RESOURCE_URI,
     SearchUseCase,
     build_server,
@@ -225,6 +227,25 @@ class TestListHandlers:
         assert result.tools[0].description is not None
         assert "SearXNG" in result.tools[0].description
 
+    async def test_tool_schema_constrains_max_results(self) -> None:
+        """The advertised schema documents the max_results bounds."""
+        server = build_server(make_use_case()[0])
+
+        result = await handler_for(server, "tools/list")(Mock(), None)
+
+        max_results = result.tools[0].input_schema["properties"]["max_results"]
+        assert max_results["minimum"] == 1
+        assert max_results["maximum"] == 100
+
+    async def test_tool_schema_constrains_time_range(self) -> None:
+        """The advertised schema enumerates valid time ranges."""
+        server = build_server(make_use_case()[0])
+
+        result = await handler_for(server, "tools/list")(Mock(), None)
+
+        time_range = result.tools[0].input_schema["properties"]["time_range"]
+        assert set(time_range["enum"]) == {"day", "week", "month", "year"}
+
 
 class TestReadResourceHandler:
     """Test the resources/read handler."""
@@ -302,6 +323,84 @@ class TestCallToolHandler:
 
         assert result.is_error is True
         assert "Missing required parameter" in text_at(result, 0)
+
+    async def test_empty_results_reported_as_text(self) -> None:
+        """No results is a successful call, not an error."""
+        use_case, _ = make_use_case(return_value=make_collection(query="obscure"))
+        server = build_server(use_case)
+
+        result = await call_tool(server, "web_search", {"query": "obscure"})
+
+        assert result.is_error is not True
+        assert "No results found" in text_at(result, 0)
+
+    async def test_forwards_optional_arguments(self) -> None:
+        """Optional tool arguments reach the use case."""
+        use_case, port = make_use_case()
+        server = build_server(use_case)
+
+        with patch.object(port, "search", wraps=port.search) as spy:
+            await call_tool(
+                server,
+                "web_search",
+                {
+                    "query": "test",
+                    "categories": ["news"],
+                    "engines": ["bing"],
+                    "language": "de",
+                    "max_results": 3,
+                    "time_range": "day",
+                },
+            )
+
+        _, parameters = spy.call_args.args
+        assert parameters.categories == ("news",)
+        assert parameters.engines == ("bing",)
+        assert parameters.language == "de"
+        assert parameters.max_results == 3
+        assert parameters.time_range == "day"
+
+    async def test_applies_defaults_for_omitted_arguments(self) -> None:
+        """Omitted optional arguments fall back to defaults, not None."""
+        use_case, port = make_use_case()
+        server = build_server(use_case)
+
+        with patch.object(port, "search", wraps=port.search) as spy:
+            await call_tool(server, "web_search", {"query": "test"})
+
+        _, parameters = spy.call_args.args
+        assert parameters.language == DEFAULT_LANGUAGE
+        assert parameters.max_results == DEFAULT_MAX_RESULTS
+        assert parameters.time_range is None
+
+    @pytest.mark.parametrize(
+        "arguments,expected",
+        [
+            ({}, "Missing required parameter"),
+            ({"query": ""}, "Missing required parameter"),
+            ({"query": "   "}, "Missing required parameter"),
+            ({"query": 42}, "Missing required parameter"),
+            ({"query": "t", "categories": "news"}, "must be an array of strings"),
+            ({"query": "t", "engines": [1, 2]}, "must be an array of strings"),
+            ({"query": "t", "max_results": "5"}, "must be an integer"),
+            ({"query": "t", "max_results": True}, "must be an integer"),
+            ({"query": "t", "max_results": 0}, "must be positive"),
+            ({"query": "t", "max_results": 500}, "cannot exceed 100"),
+            ({"query": "t", "time_range": "decade"}, "Time range must be one of"),
+            ({"query": "t", "language": 123}, "must be a non-empty string"),
+            ({"query": "t", "language": ""}, "must be a non-empty string"),
+        ],
+    )
+    async def test_invalid_arguments_return_tool_error(
+        self, arguments: dict[str, Any], expected: str
+    ) -> None:
+        """Bad arguments are reported to the model, not raised as protocol errors."""
+        server = build_server(make_use_case()[0])
+
+        result = await call_tool(server, "web_search", arguments)
+
+        assert result.is_error is True
+        assert expected in text_at(result, 0)
 
 
 class TestServeFunction:
