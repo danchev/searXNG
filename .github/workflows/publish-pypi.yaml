@@ -21,6 +21,20 @@ jobs:
       - name: Set up Python 3.12
         run: uv python install 3.12
 
+      # Publishing to PyPI cannot be undone, so fail loudly if the release
+      # tag and the packaged version disagree (e.g. tagging 0.2.0 without
+      # bumping pyproject.toml) rather than shipping the wrong version.
+      - name: Verify tag matches package version
+        run: |
+          tag="${GITHUB_REF_NAME}"
+          version="$(uv version --short)"
+          echo "release tag: ${tag}"
+          echo "package version: ${version}"
+          if [ "${tag}" != "${version}" ]; then
+            echo "::error::Release tag '${tag}' does not match package version '${version}'"
+            exit 1
+          fi
+
       - name: Build
         run: uv build
 
