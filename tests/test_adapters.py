@@ -7,6 +7,10 @@ import pytest
 import requests
 
 from searxng.adapters import (
+    MAX_CONTENT_CHARS,
+    MAX_TITLE_CHARS,
+    MAX_URL_CHARS,
+    TRUNCATION_MARKER,
     HttpSearchAdapter,
     InstanceUrl,
     SearchTimeout,
@@ -300,6 +304,71 @@ class TestHttpSearchAdapter:
         assert result.results[0].title.value == ""
         assert result.results[0].url.value == "42"
         assert result.results[0].content.value == "['a']"
+
+    async def test_oversized_fields_are_truncated(self) -> None:
+        """A hostile instance cannot flood the model's context."""
+        session = make_session(
+            {
+                "results": [
+                    {
+                        "title": "T" * 10_000,
+                        "url": "U" * 10_000,
+                        "content": "C" * 10_000,
+                    }
+                ]
+            }
+        )
+        adapter = HttpSearchAdapter(session=session)
+
+        result = await adapter.search(SearchQuery(text="test"), make_parameters())
+
+        found = result.results[0]
+        assert len(found.title.value) == MAX_TITLE_CHARS + len(TRUNCATION_MARKER)
+        assert len(found.url.value) == MAX_URL_CHARS + len(TRUNCATION_MARKER)
+        assert len(found.content.value) == MAX_CONTENT_CHARS + len(TRUNCATION_MARKER)
+        assert found.content.value.endswith(TRUNCATION_MARKER)
+
+    @pytest.mark.parametrize(
+        "length", [0, 1, 200, MAX_CONTENT_CHARS - 1, MAX_CONTENT_CHARS]
+    )
+    async def test_normal_sized_fields_pass_through_untouched(
+        self, length: int
+    ) -> None:
+        """Realistic content must be byte-identical, not silently altered."""
+        content = "C" * length
+        session = make_session({"results": [{"title": "t", "content": content}]})
+        adapter = HttpSearchAdapter(session=session)
+
+        result = await adapter.search(SearchQuery(text="test"), make_parameters())
+
+        assert result.results[0].content.value == content
+
+    async def test_truncation_bounds_total_payload(self) -> None:
+        """The worst-case payload stays bounded across the full result set."""
+        session = make_session(
+            {
+                "results": [
+                    {
+                        "title": "T" * 50_000,
+                        "url": "U" * 50_000,
+                        "content": "C" * 50_000,
+                    }
+                    for _ in range(100)
+                ]
+            }
+        )
+        adapter = HttpSearchAdapter(session=session)
+
+        result = await adapter.search(
+            SearchQuery(text="test"), make_parameters(max_results=100)
+        )
+
+        total = sum(
+            len(r.title.value) + len(r.url.value) + len(r.content.value)
+            for r in result.results
+        )
+        per_result = MAX_TITLE_CHARS + MAX_URL_CHARS + MAX_CONTENT_CHARS
+        assert total <= 100 * (per_result + 3 * len(TRUNCATION_MARKER))
 
     async def test_search_skips_malformed_result_entries(self) -> None:
         """Non-object entries in the results list are ignored."""

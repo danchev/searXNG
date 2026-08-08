@@ -20,6 +20,15 @@ from searxng.client import (
     SearchResultUrl,
 )
 
+# Upper bounds on individual result fields, chosen well above what real
+# instances return so ordinary results are never altered. They exist only
+# to bound the worst case, where an oversized response from a misbehaving
+# instance would otherwise be forwarded verbatim into the model's context.
+MAX_TITLE_CHARS = 500
+MAX_URL_CHARS = 2000
+MAX_CONTENT_CHARS = 2000
+TRUNCATION_MARKER = "…[truncated]"
+
 
 @dataclass(frozen=True)
 class InstanceUrl:
@@ -170,14 +179,28 @@ class HttpSearchAdapter:
         """Create domain result from raw data."""
         return SearchResult(
             index=ResultIndex(value=index),
-            title=SearchResultTitle(value=_as_text(raw_result.get("title"))),
-            url=SearchResultUrl(value=_as_text(raw_result.get("url"))),
-            content=SearchResultContent(value=_as_text(raw_result.get("content"))),
+            title=SearchResultTitle(
+                value=_as_text(raw_result.get("title"), MAX_TITLE_CHARS)
+            ),
+            url=SearchResultUrl(value=_as_text(raw_result.get("url"), MAX_URL_CHARS)),
+            content=SearchResultContent(
+                value=_as_text(raw_result.get("content"), MAX_CONTENT_CHARS)
+            ),
         )
 
 
-def _as_text(value: Any) -> str:
-    """Coerce a raw JSON field to a string, treating null as empty."""
+def _as_text(value: Any, limit: int) -> str:
+    """Coerce a raw JSON field to a string, treating null as empty.
+
+    Truncates at ``limit`` characters. Result fields come from whichever
+    instance the operator points at, and are forwarded verbatim into the
+    model's context, so an oversized response would otherwise be able to
+    exhaust the context window. The limits are far above what real
+    instances return, so legitimate results pass through untouched.
+    """
     if value is None:
         return ""
-    return value if isinstance(value, str) else str(value)
+    text = value if isinstance(value, str) else str(value)
+    if len(text) <= limit:
+        return text
+    return text[:limit] + TRUNCATION_MARKER
