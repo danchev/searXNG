@@ -1267,7 +1267,7 @@ wheels = [
 
 [[package]]
 name = "searxng"
-version = "0.0.0.dev1"
+version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "mcp", extra = ["cli"] },

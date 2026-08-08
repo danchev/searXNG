@@ -1,6 +1,6 @@
 [project]
 name = "searXNG"
-version = "0.0.0.dev1"
+version = "0.1.0"
 description = "MCP server providing SearXNG-based web search functionality"
 authors = [
     { name = "D. Danchev", email = "12420863+danchev@users.noreply.github.com" },
@@ -75,7 +75,7 @@ explicit = true
 
 [tool.commitizen]
 name = "cz_conventional_commits"
-version = "0.0.0"
+version = "0.1.0"
 tag_format = "$version"
 version_files = [
     "pyproject.toml:version"
