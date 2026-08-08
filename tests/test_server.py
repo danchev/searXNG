@@ -19,6 +19,7 @@ from mcp.types import (
 
 from searxng.client import (
     ResultIndex,
+    SearchError,
     SearchParameters,
     SearchQuery,
     SearchResult,
@@ -275,13 +276,6 @@ class TestCallToolHandler:
         assert len(result.content) == 1
         assert "Test" in text_at(result, 0)
 
-    async def test_missing_query_raises_value_error(self) -> None:
-        """Test web search with a missing query parameter."""
-        server = build_server(make_use_case()[0])
-
-        with pytest.raises(ValueError, match="Missing required parameter"):
-            await call_tool(server, "web_search", {})
-
     async def test_search_exception_propagates(self) -> None:
         """Test that an unexpected search failure propagates to the caller."""
         use_case, _ = make_use_case(side_effect=RuntimeError("Test error"))
@@ -289,6 +283,25 @@ class TestCallToolHandler:
 
         with pytest.raises(RuntimeError, match="Test error"):
             await call_tool(server, "web_search", {"query": "test"})
+
+    async def test_search_error_returns_tool_error(self) -> None:
+        """A SearchError from the port is reported to the model, not raised."""
+        use_case, _ = make_use_case(side_effect=SearchError("instance unreachable"))
+        server = build_server(use_case)
+
+        result = await call_tool(server, "web_search", {"query": "test"})
+
+        assert result.is_error is True
+        assert "instance unreachable" in text_at(result, 0)
+
+    async def test_missing_query_returns_tool_error(self) -> None:
+        """A missing query is a tool-level error, not a protocol error."""
+        server = build_server(make_use_case()[0])
+
+        result = await call_tool(server, "web_search", {})
+
+        assert result.is_error is True
+        assert "Missing required parameter" in text_at(result, 0)
 
 
 class TestServeFunction:
@@ -319,3 +332,28 @@ class TestServeFunction:
 
         mock_adapter_cls.assert_called_once_with(instance_url="https://test.searx")
         mock_build.return_value.run.assert_awaited_once()
+        mock_adapter.close.assert_called_once()
+
+    async def test_serve_closes_adapter_on_failure(self) -> None:
+        """The adapter's connection pool is released even if the server loop raises."""
+        from unittest.mock import AsyncMock
+
+        from searxng.server import serve
+
+        mock_adapter = Mock()
+
+        with (
+            patch("searxng.adapters.HttpSearchAdapter", return_value=mock_adapter),
+            patch("searxng.server.stdio_server") as mock_stdio,
+            patch("searxng.server.build_server") as mock_build,
+        ):
+            mock_stdio.return_value.__aenter__ = AsyncMock(
+                return_value=(Mock(), Mock())
+            )
+            mock_stdio.return_value.__aexit__ = AsyncMock(return_value=False)
+            mock_build.return_value.run = AsyncMock(side_effect=RuntimeError("boom"))
+
+            with pytest.raises(RuntimeError, match="boom"):
+                await serve()
+
+        mock_adapter.close.assert_called_once()

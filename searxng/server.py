@@ -1,6 +1,7 @@
 """Application layer - Use cases and MCP server setup."""
 
 import json
+import logging
 from typing import Any
 
 from mcp import MCPError
@@ -22,6 +23,7 @@ from mcp.types import (
 )
 
 from searxng.client import (
+    SearchError,
     SearchParameters,
     SearchPort,
     SearchQuery,
@@ -32,6 +34,8 @@ DEFAULT_CATEGORIES = ("general",)
 DEFAULT_ENGINES = ("google", "bing", "duckduckgo")
 DEFAULT_LANGUAGE = "en"
 DEFAULT_MAX_RESULTS = 10
+
+logger = logging.getLogger(__name__)
 
 SEARCH_RESOURCE_URI = "searxng://web/search"
 
@@ -229,21 +233,29 @@ def build_server(search_use_case: SearchUseCase) -> Server:
 
     async def execute_web_search(arguments: dict[str, Any]) -> CallToolResult:
         """Execute web search with provided arguments."""
-        query_text = arguments.get("query")
-        if not query_text:
-            raise ValueError("Missing required parameter: query")
+        try:
+            query_text = arguments.get("query")
+            if not query_text:
+                raise ValueError("Missing required parameter: query")
 
-        categories_list = arguments.get("categories")
-        engines_list = arguments.get("engines")
+            categories_list = arguments.get("categories")
+            engines_list = arguments.get("engines")
 
-        results = await search_use_case.execute(
-            query_text=query_text,
-            categories=tuple(categories_list) if categories_list else None,
-            engines=tuple(engines_list) if engines_list else None,
-            language=arguments.get("language", DEFAULT_LANGUAGE),
-            max_results=arguments.get("max_results", DEFAULT_MAX_RESULTS),
-            time_range=arguments.get("time_range"),
-        )
+            results = await search_use_case.execute(
+                query_text=query_text,
+                categories=tuple(categories_list) if categories_list else None,
+                engines=tuple(engines_list) if engines_list else None,
+                language=arguments.get("language", DEFAULT_LANGUAGE),
+                max_results=arguments.get("max_results", DEFAULT_MAX_RESULTS),
+                time_range=arguments.get("time_range"),
+            )
+        except (ValueError, SearchError) as e:
+            # Tool-level failure: report it to the model so it can self-correct.
+            logger.warning("web_search failed: %s", e)
+            return CallToolResult(
+                content=[TextContent(type="text", text=f"Search failed: {e}")],
+                is_error=True,
+            )
 
         return _to_tool_result(results)
 
@@ -272,9 +284,12 @@ async def serve(instance_url: str = "https://searx.party") -> None:
     search_adapter = HttpSearchAdapter(instance_url=instance_url)
     server = build_server(SearchUseCase(search_port=search_adapter))
 
-    async with stdio_server() as (read_stream, write_stream):
-        await server.run(
-            read_stream,
-            write_stream,
-            server.create_initialization_options(),
-        )
+    try:
+        async with stdio_server() as (read_stream, write_stream):
+            await server.run(
+                read_stream,
+                write_stream,
+                server.create_initialization_options(),
+            )
+    finally:
+        search_adapter.close()
