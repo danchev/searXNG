@@ -17,6 +17,14 @@
       "transport": {
         "type": "stdio"
       }
+    },
+    {
+      "registryType": "mcpb",
+      "identifier": "https://github.com/danchev/searxng-mcpb/releases/download/0.1.2/searxng.mcpb",
+      "fileSha256": "82281e35511bea9a084876cad6b0ff0c98cfeaadb045f599d73eb281d6eb5776",
+      "transport": {
+        "type": "stdio"
+      }
     }
   ]
 }
