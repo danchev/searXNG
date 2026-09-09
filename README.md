@@ -51,11 +51,34 @@ reported as failures, while a valid empty list remains a successful search.
 Application logs omit search queries and upstream exception text. The CLI keeps
 HTTP dependency logging at WARNING even when `--log-level=DEBUG` is selected.
 
+## Privacy Policy
+
+This software does not operate a hosted search service and does not send search
+queries to its maintainer. It runs on the user's device or infrastructure and
+sends each query, selected engines, categories, language, time range, and safe
+search setting directly to the configured SearXNG instance. Search results are
+returned to the connected MCP client.
+
+The software does not persist queries or results, use analytics or advertising
+trackers, create user profiles, or share data with the maintainer. Operational
+logs record result counts and errors but omit query text and upstream exception
+details. In-memory request and result data is discarded after the request.
+
+The selected SearXNG instance and the search engines it contacts are independent
+third parties. Their collection, use, sharing, and retention practices are
+governed by their own privacy policies. Before sending sensitive queries, users
+should review the selected instance's privacy notice or operate an instance they
+trust. The default CLI instance is `https://searx.party`; its policy is at
+<https://searx.party/info/en/privacy>.
+
+Privacy questions and requests can be filed at
+<https://github.com/danchev/searXNG/issues>.
+
 ## Command Line Options
 
 | Option | Default | Description |
 | --- | --- | --- |
-| `--instance-url` | `https://searx.party` | SearXNG instance to query. Must be an absolute `http(s)` URL. |
+| `--instance-url` | `https://searx.party` | SearXNG instance base URL. Must be absolute and cannot contain credentials, a query string, or a fragment. |
 | `--timeout` | `30` | Total search network timeout, in seconds. |
 | `--log-level` | `WARNING` | Logging verbosity: `DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL`. Logs are written to stderr. |
 | `--transport` | `stdio` | Transport to serve on: `stdio` or `http`. |
