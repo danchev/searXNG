@@ -20,6 +20,7 @@ from mcp.types import (
     TextContent,
     TextResourceContents,
     Tool,
+    ToolAnnotations,
 )
 
 from searxng.client import (
@@ -37,6 +38,10 @@ DEFAULT_ENGINES = ("google", "bing", "duckduckgo")
 DEFAULT_LANGUAGE = "en"
 DEFAULT_MAX_RESULTS = 10
 DEFAULT_INSTANCE_URL = "https://searx.party"
+MAX_QUERY_CHARS = 2000
+MAX_FILTER_ITEMS = 50
+MAX_FILTER_VALUE_CHARS = 100
+MAX_LANGUAGE_CHARS = 35
 
 # "sse" is intentionally absent: it was superseded by Streamable HTTP in the
 # 2025-03-26 protocol revision and should not be used for new deployments.
@@ -96,28 +101,51 @@ class SearchUseCase:
 WEB_SEARCH_TOOL = Tool(
     name="web_search",
     title="SearXNG Web Search",
-    description="Use SearXNG to search the web for information",
+    description=(
+        "Search the web through the configured SearXNG instance. Returns "
+        "matching result titles, URLs, and snippets without changing data."
+    ),
+    annotations=ToolAnnotations(
+        title="SearXNG Web Search",
+        read_only_hint=True,
+        destructive_hint=False,
+        idempotent_hint=True,
+        open_world_hint=True,
+    ),
     input_schema={
         "type": "object",
         "properties": {
             "query": {
                 "type": "string",
-                "description": "Search query string",
+                "description": "Text to search for",
                 "minLength": 1,
+                "maxLength": MAX_QUERY_CHARS,
             },
             "categories": {
                 "type": "array",
-                "items": {"type": "string"},
-                "description": "Search categories, e.g. ['general', 'images', 'news']",
+                "items": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": MAX_FILTER_VALUE_CHARS,
+                },
+                "maxItems": MAX_FILTER_ITEMS,
+                "description": "SearXNG categories to search, such as general or news",
             },
             "engines": {
                 "type": "array",
-                "items": {"type": "string"},
-                "description": "Search engines, e.g. ['google', 'bing', 'duckduckgo']",
+                "items": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": MAX_FILTER_VALUE_CHARS,
+                },
+                "maxItems": MAX_FILTER_ITEMS,
+                "description": "SearXNG engine names to use, such as google or bing",
             },
             "language": {
                 "type": "string",
                 "description": f"Search language code (default {DEFAULT_LANGUAGE!r})",
+                "minLength": 1,
+                "maxLength": MAX_LANGUAGE_CHARS,
             },
             "max_results": {
                 "type": "integer",
@@ -216,6 +244,14 @@ def _coerce_str_tuple(value: Any, field: str) -> tuple[str, ...] | None:
         isinstance(item, str) for item in value
     ):
         raise ValueError(f"'{field}' must be an array of strings")
+    if len(value) > MAX_FILTER_ITEMS:
+        raise ValueError(f"'{field}' cannot contain more than {MAX_FILTER_ITEMS} items")
+    if any(not item.strip() for item in value):
+        raise ValueError(f"'{field}' items must not be empty")
+    if any(len(item) > MAX_FILTER_VALUE_CHARS for item in value):
+        raise ValueError(
+            f"'{field}' items cannot exceed {MAX_FILTER_VALUE_CHARS} characters"
+        )
     return tuple(value) or None
 
 
@@ -225,6 +261,10 @@ def _coerce_language(value: Any) -> str:
         return DEFAULT_LANGUAGE
     if not isinstance(value, str) or not value.strip():
         raise ValueError("'language' must be a non-empty string")
+    if len(value) > MAX_LANGUAGE_CHARS:
+        raise ValueError(
+            f"'language' cannot exceed {MAX_LANGUAGE_CHARS} characters"
+        )
     return value
 
 
@@ -297,6 +337,10 @@ def build_server(search_use_case: SearchUseCase) -> Server:
             query_text = arguments.get("query")
             if not isinstance(query_text, str) or not query_text.strip():
                 raise ValueError("Missing required parameter: query")
+            if len(query_text) > MAX_QUERY_CHARS:
+                raise ValueError(
+                    f"'query' cannot exceed {MAX_QUERY_CHARS} characters"
+                )
 
             results = await search_use_case.execute(
                 query_text=query_text,

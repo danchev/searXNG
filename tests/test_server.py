@@ -34,6 +34,10 @@ from searxng.server import (
     DEFAULT_ENGINES,
     DEFAULT_LANGUAGE,
     DEFAULT_MAX_RESULTS,
+    MAX_FILTER_ITEMS,
+    MAX_FILTER_VALUE_CHARS,
+    MAX_LANGUAGE_CHARS,
+    MAX_QUERY_CHARS,
     SEARCH_RESOURCE_URI,
     SearchUseCase,
     build_server,
@@ -230,8 +234,27 @@ class TestListHandlers:
         assert len(result.tools) == 1
         tool = result.tools[0]
         assert tool.name == "web_search"
+        assert tool.title == "SearXNG Web Search"
+        assert tool.description is not None
+        assert len(tool.description) <= 200
+        assert tool.annotations is not None
+        assert tool.annotations.title == "SearXNG Web Search"
+        assert tool.annotations.read_only_hint is True
+        assert tool.annotations.destructive_hint is False
+        assert tool.annotations.idempotent_hint is True
+        assert tool.annotations.open_world_hint is True
         assert tool.input_schema["required"] == ["query"]
         assert "query" in tool.input_schema["properties"]
+
+        properties = tool.input_schema["properties"]
+        assert properties["query"]["maxLength"] == MAX_QUERY_CHARS
+        assert properties["categories"]["maxItems"] == MAX_FILTER_ITEMS
+        assert (
+            properties["categories"]["items"]["maxLength"]
+            == MAX_FILTER_VALUE_CHARS
+        )
+        assert properties["engines"]["maxItems"] == MAX_FILTER_ITEMS
+        assert properties["language"]["maxLength"] == MAX_LANGUAGE_CHARS
 
     async def test_tool_schema_constrains_max_results(self) -> None:
         """The advertised schema documents the max_results bounds."""
@@ -361,8 +384,23 @@ class TestCallToolHandler:
             ({"query": ""}, "Missing required parameter"),
             ({"query": "   "}, "Missing required parameter"),
             ({"query": 42}, "Missing required parameter"),
+            ({"query": "x" * (MAX_QUERY_CHARS + 1)}, "query' cannot exceed"),
             ({"query": "t", "categories": "news"}, "must be an array of strings"),
+            ({"query": "t", "categories": [""]}, "items must not be empty"),
+            ({"query": "t", "categories": ["   "]}, "items must not be empty"),
+            (
+                {"query": "t", "categories": ["x"] * (MAX_FILTER_ITEMS + 1)},
+                "cannot contain more than",
+            ),
+            (
+                {
+                    "query": "t",
+                    "categories": ["x" * (MAX_FILTER_VALUE_CHARS + 1)],
+                },
+                "items cannot exceed",
+            ),
             ({"query": "t", "engines": [1, 2]}, "must be an array of strings"),
+            ({"query": "t", "engines": [""]}, "items must not be empty"),
             ({"query": "t", "max_results": "5"}, "must be an integer"),
             ({"query": "t", "max_results": True}, "must be an integer"),
             ({"query": "t", "max_results": 0}, "must be positive"),
@@ -377,6 +415,10 @@ class TestCallToolHandler:
             ({"query": "t", "language": ""}, "must be a non-empty string"),
             ({"query": "t", "language": "   "}, "must be a non-empty string"),
             ({"query": "t", "language": ["en"]}, "must be a non-empty string"),
+            (
+                {"query": "t", "language": "x" * (MAX_LANGUAGE_CHARS + 1)},
+                "language' cannot exceed",
+            ),
         ],
     )
     async def test_invalid_arguments_return_tool_error(
