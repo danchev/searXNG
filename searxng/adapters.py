@@ -53,10 +53,18 @@ class InstanceUrl:
             )
 
         parsed = urlparse(self.value)
-        if parsed.scheme not in ("http", "https") or not parsed.netloc:
+        if parsed.scheme not in ("http", "https") or not parsed.hostname:
             raise ValueError(
                 f"Instance URL must be an absolute http(s) URL, got: {self.value}"
             )
+        if parsed.username is not None or parsed.password is not None:
+            raise ValueError("Instance URL must not contain credentials")
+        if parsed.query or parsed.fragment:
+            raise ValueError("Instance URL must not contain a query string or fragment")
+        try:
+            _ = parsed.port
+        except ValueError as e:
+            raise ValueError("Instance URL contains an invalid port") from e
 
         # Normalise so joining "/search" never produces a double slash.
         object.__setattr__(self, "value", self.value.rstrip("/"))

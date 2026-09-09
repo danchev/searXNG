@@ -102,6 +102,30 @@ class TestInstanceUrl:
         with pytest.raises(ValueError, match="absolute http"):
             InstanceUrl(value=value)
 
+    @pytest.mark.parametrize(
+        "value,error",
+        [
+            ("https://user@example.com", "credentials"),
+            ("https://user:secret@example.com", "credentials"),
+            ("https://example.com?tenant=one", "query string or fragment"),
+            ("https://example.com/#settings", "query string or fragment"),
+            ("https://example.com:invalid", "invalid port"),
+        ],
+    )
+    def test_rejects_unsafe_or_ambiguous_instance_urls(
+        self, value: str, error: str
+    ) -> None:
+        """A base URL cannot embed secrets or components that break /search."""
+        with pytest.raises(ValueError, match=error):
+            InstanceUrl(value=value)
+
+    def test_accepts_path_prefixed_instance(self) -> None:
+        """Self-hosted instances may live below an origin path."""
+        assert (
+            InstanceUrl(value="https://example.com/searx").value
+            == "https://example.com/searx"
+        )
+
     def test_strips_trailing_slash(self) -> None:
         """Trailing slashes are normalised so paths join cleanly."""
         assert InstanceUrl(value="https://searx.party/").value == "https://searx.party"
