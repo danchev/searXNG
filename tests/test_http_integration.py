@@ -3,6 +3,7 @@
 import asyncio
 import json
 import logging
+import sys
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
@@ -17,6 +18,12 @@ from searxng.adapters import (
 from searxng.client import SearchError, SearchQuery
 from searxng.server import SearchUseCase, build_server
 from tests.test_adapters import make_parameters
+
+
+pytestmark = pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="asyncio real-socket teardown is not deterministic on Windows",
+)
 
 
 @asynccontextmanager

@@ -1,3 +1,10 @@
+## 0.1.2 (2026-09-09)
+
+### CI
+
+- Keep real-socket integration tests on POSIX, where their asyncio connection
+  teardown semantics are deterministic; the unit suite remains cross-platform.
+
 ## 0.1.1 (2026-09-09)
 
 ### Fix
