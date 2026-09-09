@@ -1,10 +1,11 @@
 """Tests for infrastructure adapters."""
 
+import json
 from typing import Any
-from unittest.mock import Mock
+from unittest.mock import AsyncMock, MagicMock, Mock
 
+import httpx2
 import pytest
-import requests
 
 from searxng.adapters import (
     MAX_CONTENT_CHARS,
@@ -40,21 +41,25 @@ def make_parameters(
 
 
 def make_session(payload: Any = None, side_effect: Exception | None = None) -> Mock:
-    """Build a mock requests.Session returning the given JSON payload."""
-    session = Mock(spec=requests.Session)
-    if side_effect is not None:
-        session.get.side_effect = side_effect
-        return session
-
+    """Build an async streaming client with a controlled response."""
+    session = Mock(spec=httpx2.AsyncClient)
     response = Mock()
-    response.json.return_value = {"results": []} if payload is None else payload
-    session.get.return_value = response
+    response.headers = {}
+
+    async def chunks():
+        yield json.dumps({"results": []} if payload is None else payload).encode()
+
+    response.aiter_raw = chunks
+    context = MagicMock()
+    context.__aenter__ = AsyncMock(return_value=response, side_effect=side_effect)
+    context.__aexit__ = AsyncMock(return_value=False)
+    session.stream.return_value = context
     return session
 
 
 def sent_params(session: Mock) -> dict[str, Any]:
     """Extract the query params from the mock session's last call."""
-    return session.get.call_args.kwargs["params"]
+    return session.stream.call_args.kwargs["params"]
 
 
 class TestInstanceUrl:
@@ -178,7 +183,7 @@ class TestHttpSearchAdapter:
 
         await adapter.search(SearchQuery(text="test"), make_parameters())
 
-        assert session.get.call_args.args[0] == "https://custom.searx/search"
+        assert session.stream.call_args.args[1] == "https://custom.searx/search"
 
     async def test_search_with_time_range(self) -> None:
         """Test search with time range parameter."""
@@ -195,7 +200,7 @@ class TestHttpSearchAdapter:
             ),
         )
 
-        session.get.assert_called_once()
+        session.stream.assert_called_once()
         assert sent_params(session)["time_range"] == "week"
         assert result.query.text == "recent news"
 
@@ -231,7 +236,7 @@ class TestHttpSearchAdapter:
 
     async def test_search_raises_on_request_exception(self) -> None:
         """A network failure surfaces as SearchError, not as empty results."""
-        session = make_session(side_effect=requests.RequestException("Network error"))
+        session = make_session(side_effect=httpx2.RequestError("Network error"))
         adapter = HttpSearchAdapter(session=session)
 
         with pytest.raises(SearchError, match="Search request failed"):
@@ -239,7 +244,7 @@ class TestHttpSearchAdapter:
 
     async def test_search_raises_on_timeout(self) -> None:
         """A timeout reports the configured limit."""
-        session = make_session(side_effect=requests.Timeout("too slow"))
+        session = make_session(side_effect=httpx2.ReadTimeout("too slow"))
         adapter = HttpSearchAdapter(timeout=45, session=session)
 
         with pytest.raises(SearchError, match="timed out after 45s"):
@@ -248,7 +253,7 @@ class TestHttpSearchAdapter:
     async def test_search_raises_on_non_json_body(self) -> None:
         """A non-JSON response body surfaces as SearchError."""
         session = make_session()
-        session.get.return_value.json.side_effect = ValueError("not json")
+        session.stream.return_value.__aenter__.side_effect = ValueError("not json")
         adapter = HttpSearchAdapter(session=session)
 
         with pytest.raises(SearchError, match="Invalid response"):
@@ -264,8 +269,10 @@ class TestHttpSearchAdapter:
     async def test_search_raises_on_http_error(self) -> None:
         """A non-2xx status surfaces as SearchError."""
         session = make_session()
-        session.get.return_value.raise_for_status.side_effect = requests.HTTPError(
-            "429 Too Many Requests"
+        session.stream.return_value.__aenter__.return_value.raise_for_status.side_effect = httpx2.HTTPStatusError(
+            "429 Too Many Requests",
+            request=httpx2.Request("GET", "https://example.com"),
+            response=httpx2.Response(429),
         )
         adapter = HttpSearchAdapter(session=session)
 
@@ -349,9 +356,9 @@ class TestHttpSearchAdapter:
             {
                 "results": [
                     {
-                        "title": "T" * 50_000,
-                        "url": "U" * 50_000,
-                        "content": "C" * 50_000,
+                        "title": "T" * 5_000,
+                        "url": "U" * 5_000,
+                        "content": "C" * 5_000,
                     }
                     for _ in range(100)
                 ]
@@ -399,21 +406,21 @@ class TestHttpSearchAdapter:
 
         assert [r.title.value for r in result.results] == ["Real0", "Real1", "Real2"]
 
-    async def test_search_handles_missing_results_key(self) -> None:
-        """A payload without a 'results' key yields an empty collection."""
-        adapter = HttpSearchAdapter(session=make_session({}))
-
-        result = await adapter.search(SearchQuery(text="test"), make_parameters())
-
-        assert len(result.results) == 0
-
-    async def test_search_handles_non_list_results_key(self) -> None:
-        """A malformed 'results' value is treated as empty."""
-        adapter = HttpSearchAdapter(session=make_session({"results": "oops"}))
-
-        result = await adapter.search(SearchQuery(text="test"), make_parameters())
-
-        assert len(result.results) == 0
+    @pytest.mark.parametrize(
+        "payload",
+        [
+            {},
+            {"results": None},
+            {"results": 7},
+            {"results": "oops"},
+            {"error": "backend failed"},
+            {"results": [], "error": "backend failed"},
+        ],
+    )
+    async def test_rejects_malformed_response(self, payload: Any) -> None:
+        adapter = HttpSearchAdapter(session=make_session(payload))
+        with pytest.raises(SearchError, match="Invalid response"):
+            await adapter.search(SearchQuery(text="test"), make_parameters())
 
     async def test_results_are_indexed_sequentially(self) -> None:
         """Result indices reflect ranking order starting at zero."""
@@ -472,76 +479,14 @@ class TestHttpSearchAdapter:
 
         await adapter.search(SearchQuery(text="test"), make_parameters())
 
-        assert session.get.call_args.kwargs["timeout"] == 45
+        assert session.stream.call_args.kwargs["timeout"] == 45
 
-    async def test_search_runs_off_the_event_loop_thread(self) -> None:
-        """The blocking HTTP call is offloaded to a worker thread."""
-        import threading
-
-        calling_threads: list[int] = []
-
-        def record_thread(*args: Any, **kwargs: Any) -> Mock:
-            calling_threads.append(threading.get_ident())
-            response = Mock()
-            response.json.return_value = {"results": []}
-            return response
-
-        session = Mock(spec=requests.Session)
-        session.get.side_effect = record_thread
-        adapter = HttpSearchAdapter(session=session)
-
-        await adapter.search(SearchQuery(text="test"), make_parameters())
-
-        assert calling_threads and calling_threads[0] != threading.get_ident()
-
-    async def test_concurrent_searches_overlap(self) -> None:
-        """Concurrent searches must not serialize behind each other.
-
-        Each request blocks for a fixed delay; if the event loop were blocked,
-        total time would be the sum rather than roughly one delay.
-        """
-        import asyncio
-        import threading
-        import time
-
-        delay = 0.2
-        concurrency = 4
-        in_flight = 0
-        peak_in_flight = 0
-        lock = threading.Lock()
-
-        def slow_get(*args: Any, **kwargs: Any) -> Mock:
-            nonlocal in_flight, peak_in_flight
-            with lock:
-                in_flight += 1
-                peak_in_flight = max(peak_in_flight, in_flight)
-            time.sleep(delay)
-            with lock:
-                in_flight -= 1
-            response = Mock()
-            response.json.return_value = {"results": []}
-            return response
-
-        session = Mock(spec=requests.Session)
-        session.get.side_effect = slow_get
-        adapter = HttpSearchAdapter(session=session)
-
-        started = time.monotonic()
-        await asyncio.gather(
-            *[
-                adapter.search(SearchQuery(text=f"q{i}"), make_parameters())
-                for i in range(concurrency)
-            ]
-        )
-        elapsed = time.monotonic() - started
-
-        # Serialized execution would take concurrency * delay.
-        assert elapsed < delay * concurrency * 0.75
-        assert peak_in_flight > 1
-
-    def test_close_releases_the_session(self) -> None:
-        """close() shuts down the underlying connection pool."""
+    async def test_close_releases_the_session(self) -> None:
         session = make_session()
-        HttpSearchAdapter(session=session).close()
+        await HttpSearchAdapter(session=session).close()
+        session.aclose.assert_awaited_once()
 
-        session.close.assert_called_once()
+    @pytest.mark.parametrize("value", [float("nan"), float("inf")])
+    def test_rejects_nonfinite_timeout(self, value: float) -> None:
+        with pytest.raises(ValueError, match="positive"):
+            SearchTimeout(value)

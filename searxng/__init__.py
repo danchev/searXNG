@@ -29,7 +29,7 @@ def _build_parser() -> argparse.ArgumentParser:
         "--timeout",
         type=int,
         default=DEFAULT_TIMEOUT,
-        help=f"Search request timeout in seconds (default: {DEFAULT_TIMEOUT})",
+        help=f"Total search network timeout in seconds (default: {DEFAULT_TIMEOUT})",
     )
     parser.add_argument(
         "--log-level",
@@ -75,6 +75,10 @@ def main() -> None:
         stream=sys.stderr,
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
     )
+
+    # HTTP dependency INFO/DEBUG logs include full request URLs and queries.
+    for name in ("httpx2", "httpcore2"):
+        logging.getLogger(name).setLevel(logging.WARNING)
 
     if args.timeout <= 0:
         parser.error("--timeout must be a positive number of seconds")

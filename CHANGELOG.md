@@ -1,3 +1,21 @@
+## 0.1.1 (2026-09-09)
+
+### Fix
+
+- Bound upstream responses to 2 MiB and concurrent searches to eight per process;
+  excess searches fail immediately instead of queuing.
+- Use cancellable async HTTP with a total network deadline.
+- Reject malformed search responses and invalid `time_range` types with tool errors.
+- Remove queries and upstream exception details from application logs; suppress
+  HTTP dependency INFO/DEBUG logs in the CLI.
+
+### Compatibility
+
+- `HttpSearchAdapter` now accepts an `httpx2.AsyncClient` instead of a
+  `requests.Session`. Its `close()` method must be awaited.
+- Instances must serve `/search` directly and honor `Accept-Encoding: identity`;
+  redirects and compressed responses are rejected.
+
 ## 0.1.0 (2026-08-08)
 
 ### Notes

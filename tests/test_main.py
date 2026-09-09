@@ -159,3 +159,18 @@ class TestMain:
             main()
 
         assert exc_info.value.code == 2
+
+
+def test_cli_suppresses_http_dependency_query_logs():
+    with patch("searxng.logging.getLogger") as get_logger:
+        _run_main(["--log-level", "DEBUG"])
+    assert [call.args[0] for call in get_logger.call_args_list] == [
+        "httpx2",
+        "httpcore2",
+    ]
+    import logging
+
+    assert all(
+        call.args == (logging.WARNING,)
+        for call in get_logger.return_value.setLevel.call_args_list
+    )

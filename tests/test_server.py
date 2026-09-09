@@ -369,6 +369,8 @@ class TestCallToolHandler:
             ({"query": "t", "max_results": -1}, "must be positive"),
             ({"query": "t", "max_results": 5.5}, "must be an integer"),
             ({"query": "t", "max_results": 500}, "cannot exceed 100"),
+            ({"query": "t", "time_range": []}, "Time range must be one of"),
+            ({"query": "t", "time_range": {}}, "Time range must be one of"),
             ({"query": "t", "time_range": "decade"}, "Time range must be one of"),
             ({"query": "t", "language": 123}, "must be a non-empty string"),
             ({"query": "t", "language": True}, "must be a non-empty string"),
@@ -417,7 +419,7 @@ class TestServeFunction:
         """serve() builds the adapter, runs the server, and cleans up."""
         from searxng.server import serve
 
-        mock_adapter = Mock()
+        mock_adapter = Mock(close=AsyncMock())
         streams = (Mock(), Mock())
 
         with (
@@ -437,13 +439,13 @@ class TestServeFunction:
             instance_url="https://custom.searx", timeout=45
         )
         mock_build.return_value.run.assert_awaited_once()
-        mock_adapter.close.assert_called_once()
+        mock_adapter.close.assert_awaited_once()
 
     async def test_serve_closes_adapter_on_failure(self) -> None:
         """The adapter is released even if the server loop raises."""
         from searxng.server import serve
 
-        mock_adapter = Mock()
+        mock_adapter = Mock(close=AsyncMock())
 
         with (
             patch("searxng.adapters.HttpSearchAdapter", return_value=mock_adapter),
@@ -459,13 +461,13 @@ class TestServeFunction:
             with pytest.raises(RuntimeError, match="boom"):
                 await serve()
 
-        mock_adapter.close.assert_called_once()
+        mock_adapter.close.assert_awaited_once()
 
     async def test_serve_http_builds_streamable_http_app(self) -> None:
         """--transport http serves the Streamable HTTP ASGI app via uvicorn."""
         from searxng.server import STREAMABLE_HTTP_PATH, serve
 
-        mock_adapter = Mock()
+        mock_adapter = Mock(close=AsyncMock())
         mock_uvicorn = Mock()
         mock_uvicorn.Server.return_value.serve = AsyncMock()
 
@@ -483,7 +485,7 @@ class TestServeFunction:
         assert config_kwargs["host"] == "0.0.0.0"
         assert config_kwargs["port"] == 9123
         mock_uvicorn.Server.return_value.serve.assert_awaited_once()
-        mock_adapter.close.assert_called_once()
+        mock_adapter.close.assert_awaited_once()
 
     async def test_serve_http_does_not_use_stdio(self) -> None:
         """The http transport must not also grab stdin/stdout."""
@@ -493,7 +495,10 @@ class TestServeFunction:
         mock_uvicorn.Server.return_value.serve = AsyncMock()
 
         with (
-            patch("searxng.adapters.HttpSearchAdapter", return_value=Mock()),
+            patch(
+                "searxng.adapters.HttpSearchAdapter",
+                return_value=Mock(close=AsyncMock()),
+            ),
             patch("searxng.server.build_server", new_callable=Mock),
             patch("searxng.server.stdio_server", new_callable=Mock) as mock_stdio,
             patch.dict("sys.modules", {"uvicorn": mock_uvicorn}),
@@ -513,7 +518,10 @@ class TestServeFunction:
         mock_uvicorn.Server.return_value.serve = AsyncMock()
 
         with (
-            patch("searxng.adapters.HttpSearchAdapter", return_value=Mock()),
+            patch(
+                "searxng.adapters.HttpSearchAdapter",
+                return_value=Mock(close=AsyncMock()),
+            ),
             patch("searxng.server.build_server", new_callable=Mock),
             patch.dict("sys.modules", {"uvicorn": mock_uvicorn}),
             caplog.at_level(logging.WARNING, logger="searxng.server"),
@@ -534,7 +542,10 @@ class TestServeFunction:
         mock_uvicorn.Server.return_value.serve = AsyncMock()
 
         with (
-            patch("searxng.adapters.HttpSearchAdapter", return_value=Mock()),
+            patch(
+                "searxng.adapters.HttpSearchAdapter",
+                return_value=Mock(close=AsyncMock()),
+            ),
             patch("searxng.server.build_server", new_callable=Mock),
             patch.dict("sys.modules", {"uvicorn": mock_uvicorn}),
             caplog.at_level(logging.WARNING, logger="searxng.server"),
@@ -550,7 +561,10 @@ class TestServeFunction:
         from searxng.server import serve
 
         with (
-            patch("searxng.adapters.HttpSearchAdapter", return_value=Mock()),
+            patch(
+                "searxng.adapters.HttpSearchAdapter",
+                return_value=Mock(close=AsyncMock()),
+            ),
             patch("searxng.server.stdio_server", new_callable=Mock) as mock_stdio,
             patch("searxng.server.build_server", new_callable=Mock) as mock_build,
             caplog.at_level(logging.WARNING, logger="searxng.server"),
@@ -582,7 +596,7 @@ class TestServeFunction:
         """The adapter is released if the HTTP server loop raises."""
         from searxng.server import serve
 
-        mock_adapter = Mock()
+        mock_adapter = Mock(close=AsyncMock())
         mock_uvicorn = Mock()
         mock_uvicorn.Server.return_value.serve = AsyncMock(
             side_effect=RuntimeError("bind failed")
@@ -596,4 +610,4 @@ class TestServeFunction:
         ):
             await serve(transport="http")
 
-        mock_adapter.close.assert_called_once()
+        mock_adapter.close.assert_awaited_once()

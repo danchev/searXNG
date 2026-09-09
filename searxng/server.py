@@ -395,4 +395,4 @@ async def serve(
         else:
             await _serve_stdio(server)
     finally:
-        search_adapter.close()
+        await search_adapter.close()

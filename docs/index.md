@@ -33,12 +33,28 @@ If a search cannot be completed (the instance is unreachable, rate-limits the
 request, or returns a malformed response), the tool returns an error result
 describing the failure rather than an empty result list.
 
+## Search limits
+
+Each server process admits up to eight concurrent searches. Further calls return
+an error immediately and can be retried later. `--timeout` bounds the complete
+network operation, including streaming the response; cancellation closes the
+active request. Responses are limited to 2 MiB before JSON parsing.
+
+The configured instance must serve `/search` directly: redirects are rejected.
+The client requests `Accept-Encoding: identity` and rejects compressed responses
+to prevent unbounded decompression. Result fields are also truncated to their
+existing limits. Missing or non-list `results` and upstream error objects are
+reported as failures, while a valid empty list remains a successful search.
+
+Application logs omit search queries and upstream exception text. The CLI keeps
+HTTP dependency logging at WARNING even when `--log-level=DEBUG` is selected.
+
 ## Command Line Options
 
 | Option | Default | Description |
 | --- | --- | --- |
 | `--instance-url` | `https://searx.party` | SearXNG instance to query. Must be an absolute `http(s)` URL. |
-| `--timeout` | `30` | Per-search request timeout, in seconds. |
+| `--timeout` | `30` | Total search network timeout, in seconds. |
 | `--log-level` | `WARNING` | Logging verbosity: `DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL`. Logs are written to stderr. |
 | `--transport` | `stdio` | Transport to serve on: `stdio` or `http`. |
 | `--host` | `127.0.0.1` | Host to bind when `--transport=http`. |

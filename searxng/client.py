@@ -105,7 +105,10 @@ class SearchParameters:
             raise ValueError("Max results must be positive")
         if self.max_results > MAX_RESULTS_LIMIT:
             raise ValueError(f"Max results cannot exceed {MAX_RESULTS_LIMIT}")
-        if self.time_range is not None and self.time_range not in VALID_TIME_RANGES:
+        if self.time_range is not None and (
+            not isinstance(self.time_range, str)
+            or self.time_range not in VALID_TIME_RANGES
+        ):
             valid = ", ".join(sorted(VALID_TIME_RANGES))
             raise ValueError(f"Time range must be one of: {valid}")
 

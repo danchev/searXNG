@@ -1,12 +1,15 @@
 """Infrastructure adapters - HTTP client and external integrations."""
 
 import asyncio
+import json
 import logging
+import math
 from dataclasses import dataclass
+from itertools import islice
 from typing import Any
 from urllib.parse import urlparse
 
-import requests
+import httpx2
 
 from searxng.client import (
     ResultIndex,
@@ -28,6 +31,8 @@ MAX_TITLE_CHARS = 500
 MAX_URL_CHARS = 2000
 MAX_CONTENT_CHARS = 2000
 TRUNCATION_MARKER = "…[truncated]"
+MAX_RESPONSE_BYTES = 2 * 1024 * 1024
+MAX_CONCURRENT_SEARCHES = 8
 
 
 @dataclass(frozen=True)
@@ -67,7 +72,7 @@ class SearchTimeout:
         # bool is a subclass of int, but is never a meaningful timeout.
         if isinstance(self.seconds, bool):
             raise ValueError("Timeout must be a number, not a bool")  # noqa: TRY004
-        if self.seconds <= 0:
+        if not math.isfinite(self.seconds) or self.seconds <= 0:
             raise ValueError("Timeout must be positive")
 
 
@@ -78,38 +83,47 @@ class HttpSearchAdapter:
         self,
         instance_url: str = "https://searx.party",
         timeout: float = 30,
-        session: requests.Session | None = None,
+        session: httpx2.AsyncClient | None = None,
     ) -> None:
         self._instance_url = InstanceUrl(value=instance_url)
         self._timeout = SearchTimeout(seconds=timeout)
-        self._session = session or requests.Session()
+        self._session = session or httpx2.AsyncClient(
+            limits=httpx2.Limits(max_connections=MAX_CONCURRENT_SEARCHES),
+        )
+        self._slots = asyncio.Semaphore(MAX_CONCURRENT_SEARCHES)
         self._logger = logging.getLogger(__name__)
 
     async def search(
         self, query: SearchQuery, parameters: SearchParameters
     ) -> SearchResultCollection:
-        """Execute search and return results.
-
-        ``requests`` is blocking, so the call is offloaded to a worker thread to
-        keep the server's event loop responsive to concurrent requests.
-        """
-        self._logger.info("Start search: %s", query.text)
-
-        request_params = self._build_request_params(query, parameters)
-        search_url = f"{self._instance_url.value}/search"
-
-        try:
-            raw_results = await asyncio.to_thread(
-                self._execute_request, search_url, request_params
-            )
-        except requests.Timeout as e:
-            raise SearchError(f"Search timed out after {self._timeout.seconds}s") from e
-        except requests.RequestException as e:
-            raise SearchError(f"Search request failed: {e}") from e
-        except ValueError as e:
-            raise SearchError(f"Invalid response from search instance: {e}") from e
-
-        return self._map_to_domain(query, raw_results, parameters.max_results)
+        """Search with bounded admission and a cancellable network deadline."""
+        # No waiting queue: overload must not accumulate unbounded tasks.
+        # This check and acquire have no intervening suspension when available.
+        if self._slots.locked():
+            raise SearchError("Search capacity reached; retry later")
+        async with self._slots:
+            try:
+                async with asyncio.timeout(self._timeout.seconds):
+                    raw_results = await self._execute_request(
+                        f"{self._instance_url.value}/search",
+                        self._build_request_params(query, parameters),
+                    )
+                    return self._map_to_domain(
+                        query, raw_results, parameters.max_results
+                    )
+            except (TimeoutError, httpx2.TimeoutException) as e:
+                raise SearchError(
+                    f"Search timed out after {self._timeout.seconds}s"
+                ) from e
+            except httpx2.HTTPStatusError as e:
+                raise SearchError(
+                    f"Search request failed: HTTP {e.response.status_code}"
+                ) from e
+            except httpx2.RequestError as e:
+                # Exception messages can include URLs, credentials and queries.
+                raise SearchError("Search request failed: network error") from e
+            except (ValueError, RecursionError) as e:
+                raise SearchError("Invalid response from search instance") from e
 
     def _build_request_params(
         self, query: SearchQuery, parameters: SearchParameters
@@ -134,40 +148,62 @@ class HttpSearchAdapter:
 
         return params
 
-    def _execute_request(self, url: str, params: dict[str, Any]) -> dict[str, Any]:
-        """Execute HTTP request. Blocking - call via a worker thread."""
-        self._logger.debug("Request URL: %s Parameters: %s", url, params)
-        response = self._session.get(url, params=params, timeout=self._timeout.seconds)
-        response.raise_for_status()
+    async def _execute_request(
+        self, url: str, params: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Bound raw response bytes before decoding or parsing untrusted data."""
+        async with self._session.stream(
+            "GET",
+            url,
+            params=params,
+            timeout=self._timeout.seconds,
+            headers={"Accept-Encoding": "identity"},
+            follow_redirects=False,
+        ) as response:
+            response.raise_for_status()
+            # Reject compression instead of allowing decompression to allocate
+            # an arbitrarily large buffer before we can enforce the byte limit.
+            if (
+                response.headers.get("content-encoding", "identity").lower()
+                != "identity"
+            ):
+                raise SearchError(
+                    "Search instance returned unsupported content encoding"
+                )
+            length = response.headers.get("content-length")
+            if length is not None and int(length) > MAX_RESPONSE_BYTES:
+                raise SearchError("Search response exceeds 2 MiB limit")
+            body = bytearray()
+            async for chunk in response.aiter_raw():
+                if len(body) + len(chunk) > MAX_RESPONSE_BYTES:
+                    raise SearchError("Search response exceeds 2 MiB limit")
+                body.extend(chunk)
 
-        results = response.json()
-        if not isinstance(results, dict):
-            # ValueError, not TypeError: search() maps decode failures (which
-            # json() also raises as ValueError) onto a single SearchError.
-            raise ValueError(  # noqa: TRY004
-                f"Expected a JSON object, got {type(results).__name__}"
-            )
-
-        self._logger.info("Got %d results", len(results.get("results", [])))
+        results = json.loads(body)
+        if (
+            not isinstance(results, dict)
+            or not isinstance(results.get("results"), list)
+            or results.get("error")
+            or results.get("errors")
+        ):
+            raise ValueError("Invalid search response structure")
+        self._logger.info("Search completed: %d results", len(results["results"]))
         return results
 
-    def close(self) -> None:
+    async def close(self) -> None:
         """Release the underlying HTTP connection pool."""
-        self._session.close()
+        await self._session.aclose()
 
     def _map_to_domain(
         self, query: SearchQuery, raw_data: dict[str, Any], max_results: int
     ) -> SearchResultCollection:
         """Map raw API response to domain model."""
-        results = raw_data.get("results") or []
-        if not isinstance(results, list):
-            self._logger.warning("Unexpected 'results' payload; treating as empty")
-            results = []
+        results = raw_data["results"]
 
         domain_results = [
             self._create_domain_result(index, result)
             for index, result in enumerate(
-                [r for r in results if isinstance(r, dict)][:max_results]
+                islice((r for r in results if isinstance(r, dict)), max_results)
             )
         ]
 
