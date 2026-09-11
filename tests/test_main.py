@@ -38,6 +38,7 @@ class TestMain:
             transport=DEFAULT_TRANSPORT,
             host=DEFAULT_HOST,
             port=DEFAULT_PORT,
+            headers={},
         )
 
     def test_defaults_to_stdio_on_loopback(self) -> None:

@@ -478,7 +478,7 @@ class TestServeFunction:
             await serve(instance_url="https://custom.searx", timeout=45)
 
         mock_adapter_cls.assert_called_once_with(
-            instance_url="https://custom.searx", timeout=45
+            instance_url="https://custom.searx", timeout=45, headers=None
         )
         mock_build.return_value.run.assert_awaited_once()
         mock_adapter.close.assert_awaited_once()
