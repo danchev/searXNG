@@ -1,0 +1,40 @@
+# Git
+.git
+.gitignore
+.github
+
+# Python
+.venv
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Testing/Coverage
+.coverage
+htmlcov/
+.pytest_cache/
+.tox/
+.nox/
+cov_annotate/
+
+# Build artifacts
+dist/
+build/
+*.egg-info/
+
+# IDEs and Editors
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Linting/Typing caches
+.mypy_cache/
+.ruff_cache/
+.pre-commit-config.yaml
