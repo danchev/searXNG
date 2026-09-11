@@ -370,7 +370,7 @@ def build_server(search_use_case: SearchUseCase) -> Server:
         return await execute_web_search(params.arguments or {})
 
     return Server(
-        "SearXNGServer",
+        "searxng",
         on_list_resources=handle_list_resources,
         on_read_resource=handle_read_resource,
         on_list_tools=handle_list_tools,
@@ -422,6 +422,7 @@ async def serve(
     transport: str = DEFAULT_TRANSPORT,
     host: str = DEFAULT_HOST,
     port: int = DEFAULT_PORT,
+    headers: dict[str, str] | None = None,
 ) -> None:
     """Start SearXNG MCP server on the requested transport."""
     from searxng.adapters import HttpSearchAdapter
@@ -430,7 +431,7 @@ async def serve(
         valid = ", ".join(sorted(VALID_TRANSPORTS))
         raise ValueError(f"Transport must be one of: {valid}")
 
-    search_adapter = HttpSearchAdapter(instance_url=instance_url, timeout=timeout)
+    search_adapter = HttpSearchAdapter(instance_url=instance_url, timeout=timeout, headers=headers)
     server = build_server(SearchUseCase(search_port=search_adapter))
 
     try:

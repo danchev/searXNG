@@ -61,6 +61,11 @@ def _build_parser() -> argparse.ArgumentParser:
         default=DEFAULT_PORT,
         help=f"Port to bind when --transport=http (default: {DEFAULT_PORT})",
     )
+    parser.add_argument(
+        "--header",
+        action="append",
+        help="Custom HTTP header to send with search requests (e.g. 'X-Forwarded-For: 127.0.0.1'). Can be used multiple times.",
+    )
     return parser
 
 
@@ -86,6 +91,14 @@ def main() -> None:
     if not 1 <= args.port <= 65535:
         parser.error("--port must be between 1 and 65535")
 
+    custom_headers = {}
+    if args.header:
+        for h in args.header:
+            if ":" not in h:
+                parser.error(f"Invalid header format (missing colon): {h}")
+            k, v = h.split(":", 1)
+            custom_headers[k.strip()] = v.strip()
+
     try:
         asyncio.run(
             serve(
@@ -94,6 +107,7 @@ def main() -> None:
                 transport=args.transport,
                 host=args.host,
                 port=args.port,
+                headers=custom_headers,
             )
         )
     except KeyboardInterrupt:

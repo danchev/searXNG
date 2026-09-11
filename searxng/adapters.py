@@ -91,10 +91,12 @@ class HttpSearchAdapter:
         self,
         instance_url: str = "https://searx.party",
         timeout: float = 30,
+        headers: dict[str, str] | None = None,
         session: httpx2.AsyncClient | None = None,
     ) -> None:
         self._instance_url = InstanceUrl(value=instance_url)
         self._timeout = SearchTimeout(seconds=timeout)
+        self._headers = headers or {}
         self._session = session or httpx2.AsyncClient(
             limits=httpx2.Limits(max_connections=MAX_CONCURRENT_SEARCHES),
         )
@@ -160,12 +162,14 @@ class HttpSearchAdapter:
         self, url: str, params: dict[str, Any]
     ) -> dict[str, Any]:
         """Bound raw response bytes before decoding or parsing untrusted data."""
+        request_headers = {"Accept-Encoding": "identity"}
+        request_headers.update(self._headers)
         async with self._session.stream(
             "GET",
             url,
             params=params,
             timeout=self._timeout.seconds,
-            headers={"Accept-Encoding": "identity"},
+            headers=request_headers,
             follow_redirects=False,
         ) as response:
             response.raise_for_status()
