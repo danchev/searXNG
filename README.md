@@ -2,11 +2,11 @@
 [![License](https://img.shields.io/pypi/l/searxng.svg)](https://pypi.org/project/searxng)
 [![PyPI Downloads](https://static.pepy.tech/personalized-badge/searxng?period=total&units=INTERNATIONAL_SYSTEM&left_color=GRAY&right_color=BLUE&left_text=downloads)](https://pypi.org/project/searxng)
 
-# searXNG
+# SearXNG MCP Server
 
 <!-- mcp-name: io.github.danchev/searxng -->
 
-A network search server based on MCP technology, providing privacy-friendly web search functionality using the [SearXNG](https://github.com/searxng/searxng) search engine.
+A Model Context Protocol (MCP) server that equips AI agents with privacy-friendly web search capabilities using the [SearXNG](https://github.com/searxng/searxng) metasearch engine.
 
 ## Features
 
@@ -35,7 +35,7 @@ If a search cannot be completed (the instance is unreachable, rate-limits the
 request, or returns a malformed response), the tool returns an error result
 describing the failure rather than an empty result list.
 
-## Search limits
+## Search Limits
 
 Each server process admits up to eight concurrent searches. Further calls return
 an error immediately and can be retried later. `--timeout` bounds the complete
@@ -137,6 +137,22 @@ To set up SearXNG as an MCP server, add one of the following to your MCP configu
   "searxng": {
     "command": "uvx",
     "args": ["searxng", "--instance-url=https://searx.party"]
+  }
+}
+```
+
+**Docker setup (Local stdio):**
+```json
+"mcpServers": {
+  "searxng": {
+    "command": "docker",
+    "args": [
+      "run",
+      "-i",
+      "--rm",
+      "ghcr.io/danchev/searxng:latest",
+      "--instance-url=https://searx.party"
+    ]
   }
 }
 ```
