@@ -84,6 +84,19 @@ Privacy questions and requests can be filed at
 | `--transport` | `stdio` | Transport to serve on: `stdio` or `http`. |
 | `--host` | `127.0.0.1` | Host to bind when `--transport=http`. |
 | `--port` | `8000` | Port to bind when `--transport=http`. |
+| `--header` | `None` | Custom HTTP headers to send with search requests (e.g., `X-Forwarded-For: 1.2.3.4`). Can be specified multiple times. |
+
+## Docker / Kubernetes
+
+You can run the server easily using the official container image published to the GitHub Container Registry:
+
+```bash
+docker run -p 8000:8000 ghcr.io/danchev/searxng:latest \
+    --transport http \
+    --host 0.0.0.0 \
+    --instance-url=https://searx.party \
+    --header "Authorization: Bearer my-secret-token"
+```
 
 ## Transports
 
