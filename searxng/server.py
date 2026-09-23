@@ -262,9 +262,7 @@ def _coerce_language(value: Any) -> str:
     if not isinstance(value, str) or not value.strip():
         raise ValueError("'language' must be a non-empty string")
     if len(value) > MAX_LANGUAGE_CHARS:
-        raise ValueError(
-            f"'language' cannot exceed {MAX_LANGUAGE_CHARS} characters"
-        )
+        raise ValueError(f"'language' cannot exceed {MAX_LANGUAGE_CHARS} characters")
     return value
 
 
@@ -338,9 +336,7 @@ def build_server(search_use_case: SearchUseCase) -> Server:
             if not isinstance(query_text, str) or not query_text.strip():
                 raise ValueError("Missing required parameter: query")
             if len(query_text) > MAX_QUERY_CHARS:
-                raise ValueError(
-                    f"'query' cannot exceed {MAX_QUERY_CHARS} characters"
-                )
+                raise ValueError(f"'query' cannot exceed {MAX_QUERY_CHARS} characters")
 
             results = await search_use_case.execute(
                 query_text=query_text,
@@ -431,7 +427,9 @@ async def serve(
         valid = ", ".join(sorted(VALID_TRANSPORTS))
         raise ValueError(f"Transport must be one of: {valid}")
 
-    search_adapter = HttpSearchAdapter(instance_url=instance_url, timeout=timeout, headers=headers)
+    search_adapter = HttpSearchAdapter(
+        instance_url=instance_url, timeout=timeout, headers=headers
+    )
     server = build_server(SearchUseCase(search_port=search_adapter))
 
     try:
