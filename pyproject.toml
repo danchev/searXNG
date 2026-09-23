@@ -1,7 +1,8 @@
 [project]
 name = "searXNG"
 version = "0.1.2"
-description = "MCP server providing SearXNG-based web search functionality"
+description = "MCP server for privacy-friendly web search through a configurable SearXNG instance"
+keywords = ["mcp", "model-context-protocol", "searxng", "web-search", "privacy"]
 authors = [
     { name = "D. Danchev", email = "12420863+danchev@users.noreply.github.com" },
 ]
