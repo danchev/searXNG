@@ -249,10 +249,7 @@ class TestListHandlers:
         properties = tool.input_schema["properties"]
         assert properties["query"]["maxLength"] == MAX_QUERY_CHARS
         assert properties["categories"]["maxItems"] == MAX_FILTER_ITEMS
-        assert (
-            properties["categories"]["items"]["maxLength"]
-            == MAX_FILTER_VALUE_CHARS
-        )
+        assert properties["categories"]["items"]["maxLength"] == MAX_FILTER_VALUE_CHARS
         assert properties["engines"]["maxItems"] == MAX_FILTER_ITEMS
         assert properties["language"]["maxLength"] == MAX_LANGUAGE_CHARS
 
